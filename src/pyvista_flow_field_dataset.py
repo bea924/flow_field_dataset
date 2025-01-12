@@ -7,7 +7,7 @@ VolumeFieldType = Literal["velocity", "pressure", "temperature"]
 SurfaceFieldType = Literal["pressure", "temperature", "shear_stress", "heat_flux"]
 
 class PyvistaSample:
-    def __init__(self, data: pv.PolyData):
+    def __init__(self, data: pv.UnstructuredGrid):
         self.data = data
         self.surface_data = data.extract_surface()
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
@@ -48,13 +48,16 @@ class PyvistaSample:
     @classmethod
     def from_file(cls, filename: str):
         data = pv.read(filename)
+        if not isinstance(data, pv.UnstructuredGrid):
+            data = data.cast_to_unstructured_grid()
+        # TODO not sure it works like this for pv.polydata objects as well as strucutresGrid
         return cls(data)
         
 
 class PyvistaFlowFieldDataset:
     def __init__(self, data_dir: str):
         self.data_dir = os.path.abspath(data_dir)
-        possible_extensions = [".ply", ".vtp", ".stl", ".vtk", ".geo", ".obj", ".iv"]
+        possible_extensions = [".ply", ".vtp", ".stl", ".vtk", ".geo", ".obj", ".iv", ".vtu"]
         self.files = [f for f in os.listdir(self.data_dir) if os.path.splitext(f)[-1] in possible_extensions]
         self._index = 0  # Track iteration state
         

@@ -3,28 +3,41 @@ import dgl
 import torch
 import pyvista_flow_field_dataset as pvffd
 import pyvista as pv
+from pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
 
 class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
-    def __init__(self, cache_dir: str):
+    def __init__(self, cache_dir: str, pyvista_dataset: PyvistaFlowFieldDataset = None):
         """
         Parameters:
         -----------
         cache_dir: str
-            The directory where the dataset converted to DGLGraphs will be stored.
+            The directory where the dataset converted to DGLGraphs is stored.
+        polydata: pv.PolyData
+            The directory where the dataset converted to DGLGraphs is stored. Default None.
         """
-        self.cache_dir = cache_dir
+        self.cache_dir = os.path.abspath(cache_dir)
         self.files = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
+        # TODO should we make the cache_dir optional if we provide pyvista_dataset
 
         # TODO: Check if the cache_dir contains valid DGLGraphs and check each of the graphs.
+        if not self.files and pyvista_dataset == None:
+            raise ValueError("No valid DGLGraphs found in the cache directory and no PyvistaFlowFieldDataset instance provided.")
+        if pyvista_dataset:
+            self.files.append(pyvista_dataset.files)
 
     def __len__(self):
         return len(self.files)
 
     def __getitem__(self, idx):
         filename = os.path.join(self.cache_dir, self.files[idx])
-        g = dgl.load_graphs(filename)[0][0]
-        return self.normalize(g)
+        if filename.endswith(".dgl"):
+            g = dgl.load_graphs(filename)[0][0]
+            return self.normalize(g)
+        else:
+            gpv = PyvistaSample.from_file(filename)
+            g = self.pv_to_volume_dgl(gpv.data)
+            return self.normalize(g)
 
     @classmethod
     def pv_to_volume_dgl(cls, polydata: pv.PolyData) -> dgl.DGLGraph:
@@ -40,7 +53,36 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         --------
         DGLGraph: The converted graph.
         """
+        # TODO do we need to convert explicitly from polydata? when will we need polydata specifically?
         raise NotImplementedError("Implement this method")
+
+    @classmethod
+    def UnstructuredGrid_to_volume_dgl(cls, grid: pv.UnstructuredGrid) -> dgl.DGLGraph:
+        """
+        Convert a Pyvista UnstructuredGrid object to a DGLGraph of the volume flow field.
+
+        Parameters:
+        -----------
+        grid: pv.UnstructuredGrid
+            The UnstructuredGrid object to convert.
+
+        Returns:
+        --------
+        DGLGraph: The converted graph.
+        """
+        edges_from = []
+        edges_to = []
+
+        for i in range(grid.n_points):
+            neighbors = grid.point_neighbors(i)
+            edges_from.extend([i]*len(neighbors))
+            edges_to.extend(neighbors)
+
+        graph = dgl.graph((edges_from, edges_to), num_nodes=grid.n_points)
+        # graph.ndata['velocity'] = torch.tensor(grid.point_data['Velocity'], dtype=torch.float32)
+        # TODO add the attributes to the nodes from the grid
+        return graph
+        
 
     def volume_dgl_to_pv(self, graph: dgl.DGLGraph) -> pv.PolyData:
         """
