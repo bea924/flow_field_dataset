@@ -1,70 +1,110 @@
 import os
 import pyvista as pv
-from typing import Iterable, Iterator, Literal
+from typing import Literal
 import numpy as np
 
 VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
+
+
+# TODO: Put the real ones here
 SurfaceFieldType = Literal["pressure", "temperature", "shear_stress", "heat_flux"]
 
+
 class PyvistaSample:
-    def __init__(self, data: pv.MultiBlock):
-        self.data = data
-        #self.surface_data = data[0][0].extract_surface()
+    def __init__(self, volume_path: str, surface_path: str):
+        self.volume_path = volume_path
+        self.surface_path = surface_path
+        self._volume_data: pv.MultiBlock | None = None
+        self._surface_data: pv.MultiBlock | None = None
+
+    @property
+    def surface_data(self):
+        if self._surface_data is None:
+            self._surface_data = pv.read(self.surface_path)
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
-    
-    def save(self, filename: str):
-        """
-        Save the dataset to a file. The file format is determined by the file extension. Supported formats include:
-        '.ply', '.vtp', '.stl', '.vtk, '.geo', '.obj', '.iv'
-        """
-        self.data.save(filename)
-        
+        return self._surface_data
+
+    @property
+    def volume_data(self):
+        if self._volume_data is None:
+            self._volume_data = pv.read(self.volume_path)
+        # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
+        return self._volume_data
+
     def plot_surface(self, field: SurfaceFieldType):
-        self.data.plot(field)
+        self.surface_data.plot(field)
+
     def plot_volume(self, field: VolumeFieldType):
-        self.data[0][0].plot(field, opacity=0.5)
-        
-    def get_points(self)->np.ndarray:
+        self.volume_data.plot(field, opacity=0.5)
+
+    def get_points(self) -> np.ndarray:
         """
         Returns the points of the dataset as a numpy array.
-        
+
         Returns:
         --------
         np.ndarray: The points of the dataset. Shape: (n_points, 3)
         """
-        return self.data.points
-    
-    def get_surface_points(self)->np.ndarray:
+        return self.volume_data.points
+
+    def get_surface_points(self, block_index: int) -> np.ndarray:
         """
         Returns the points of the surface dataset as a numpy array.
-        
+
         Returns:
         --------
         np.ndarray: The points of the surface dataset. Shape: (n_points, 3)
         """
-        return self.surface_data.points
+        block = self.surface_data[0][block_index]
+        return block.points
     
-    
-    @classmethod
-    def from_file(cls, filename: str):
-        data = pv.read(filename)
-        # TODO not sure it works like this for pv.polydata objects as well as strucutresGrid
-        return cls(data)
-        
+    def get_labeled_surface_points(self) -> np.ndarray:
+        """
+        Returns the surface points of the dataset with their block index as a numpy array.
+
+        Returns:
+        --------
+        np.ndarray: The labeled points of the dataset. Shape: (n_points, 4)
+        """
+        labeled_points = []
+        for i, block in enumerate(self.surface_data[0]):
+            labeled_points.append(np.hstack((block.points, np.full((block.n_points, 1), i))))
+        return np.vstack(labeled_points)
+
+    def load(self):
+        self.volume_data
+        self.surface_data
+
+    def unload(self):
+        self._volume_data = None
+        self._surface_data = None
+
 
 class PyvistaFlowFieldDataset:
     def __init__(self, data_dir: str):
         self.data_dir = os.path.abspath(data_dir)
-        possible_extensions = [".ply", ".vtp", ".stl", ".vtk", ".geo", ".obj", ".iv", ".vtu",".cgns"]
-        self.files = [f for f in os.listdir(self.data_dir) if os.path.splitext(f)[-1] in possible_extensions]
-        self._index = 0  # Track iteration state
+        possible_extensions = [
+            ".ply",
+            ".vtp",
+            ".stl",
+            ".vtk",
+            ".geo",
+            ".obj",
+            ".iv",
+            ".vtu",
+            ".cgns",
+        ]
+        files = os.listdir(self.data_dir)
+        files = [f for f in files if any(f.endswith(ext) for ext in possible_extensions)]
+        surface_files = [f for f in files if "surface" in f]
+        volume_files = [f for f in files if "volume" in f]
+        surface_files=sorted(surface_files)
+        volume_files=sorted(volume_files)
+        self.samples = [PyvistaSample(os.path.join(data_dir,v), os.path.join(data_dir,s)) for v, s in zip(volume_files, surface_files)]
         
+
     def __len__(self):
-        return len(self.files)
-    
+        return len(self.samples)
+
     def __getitem__(self, idx: int):
-        return PyvistaSample.from_file(os.path.join(self.data_dir, self.files[idx]))
-    
-    
-    
-        
+        return self.samples[idx]
