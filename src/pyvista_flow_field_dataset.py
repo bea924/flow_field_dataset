@@ -20,14 +20,23 @@ class PyvistaSample:
     @property
     def surface_data(self):
         if self._surface_data is None:
-            self._surface_data = pv.read(self.surface_path)
+            if (self._surface_data.endswith(".cgns")):
+                self._surface_data = pv.CGNSReader(self.surface_path)
+            else:
+                self._surface_data = pv.read(self.surface_path)
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
         return self._surface_data
 
     @property
     def volume_data(self):
         if self._volume_data is None:
-            self._volume_data = pv.read(self.volume_path)
+            if (self.volume_path.endswith(".cgns")):
+                reader = pv.CGNSReader(self.volume_path)
+                reader.load_boundary_patch = False
+                ds = reader.read()
+                self._volume_data = ds
+            else:
+                self._volume_data = pv.read(self.volume_path)
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
         return self._volume_data
 
@@ -45,7 +54,10 @@ class PyvistaSample:
         --------
         np.ndarray: The points of the dataset. Shape: (n_points, 3)
         """
-        return self.volume_data.points
+        # TODO check if same works for non cgns
+        block = self.volume_data[0][0]
+        return block.points
+
 
     def get_surface_points(self, block_index: int) -> np.ndarray:
         """
@@ -58,6 +70,7 @@ class PyvistaSample:
         block = self.surface_data[0][block_index]
         return block.points
     
+
     def get_labeled_surface_points(self) -> np.ndarray:
         """
         Returns the surface points of the dataset with their block index as a numpy array.
