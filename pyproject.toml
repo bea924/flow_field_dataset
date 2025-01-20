@@ -11,6 +11,7 @@ torch = "^2.3.0"
 h5py = "^3.12.1"
 pyvista = {extras = ["jupyter"], version = "^0.44.2"}
 trame = "^3.7.6"
+tensordict = "^0.6.2"
 
 
 [tool.poetry.group.dev.dependencies]
