@@ -20,23 +20,14 @@ class PyvistaSample:
     @property
     def surface_data(self):
         if self._surface_data is None:
-            if (self._surface_data.endswith(".cgns")):
-                self._surface_data = pv.CGNSReader(self.surface_path)
-            else:
-                self._surface_data = pv.read(self.surface_path)
+            self._surface_data = pv.read(self.surface_path)
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
         return self._surface_data
 
     @property
     def volume_data(self):
         if self._volume_data is None:
-            if (self.volume_path.endswith(".cgns")):
-                reader = pv.CGNSReader(self.volume_path)
-                reader.load_boundary_patch = False
-                ds = reader.read()
-                self._volume_data = ds
-            else:
-                self._volume_data = pv.read(self.volume_path)
+            self._volume_data = pv.read(self.volume_path)
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
         return self._volume_data
 
