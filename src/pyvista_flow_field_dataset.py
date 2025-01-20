@@ -47,7 +47,7 @@ class PyvistaSample:
         """
         # TODO check if same works for non cgns
         block = self.volume_data[0][0]
-        return block.points
+        return block.cell_centers().points
 
 
     def get_surface_points(self, block_index: int) -> np.ndarray:
