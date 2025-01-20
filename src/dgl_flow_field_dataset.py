@@ -1,7 +1,6 @@
 import os
 import dgl
 import torch
-import pyvista_flow_field_dataset as pvffd
 import pyvista as pv
 from pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
