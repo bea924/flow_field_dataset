@@ -7,7 +7,7 @@ VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 
 
 # TODO: Put the real ones here
-SurfaceFieldType = Literal["pressure", "temperature", "shear_stress", "heat_flux"]
+SurfaceFieldType = Literal["Pressure", "Temperature", "WallShearStressMagnitude", "WallShearStress_0", "WallShearStress_1", "WallShearStress_2"]
 
 
 class PyvistaSample:
@@ -32,10 +32,10 @@ class PyvistaSample:
         return self._volume_data
 
     def plot_surface(self, field: SurfaceFieldType):
-        self.surface_data.plot(field)
+        self.surface_data.plot(scalars=field)
 
     def plot_volume(self, field: VolumeFieldType):
-        self.volume_data.plot(field, opacity=0.5)
+        self.volume_data[0][0][0].plot(scalars=field, opacity=0.7)
 
     def get_points(self) -> np.ndarray:
         """
