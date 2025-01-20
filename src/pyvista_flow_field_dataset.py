@@ -76,8 +76,25 @@ class PyvistaSample:
         self.surface_data
 
     def unload(self):
+        # TODO: Test if this frees the memory
         self._volume_data = None
         self._surface_data = None
+    
+    def compute_aggregate_force(self, block_index: int) -> np.ndarray:
+        """
+        Compute the aggregate force acting on the surface of the block with the given index. This is done by integrating the force acting on each point of the surface.
+
+        Parameters:
+        -----------
+        block_index: int
+            The index of the block to compute the aggregate force for.
+
+        Returns:
+        --------
+        np.ndarray: The aggregate force acting on the surface of the block.
+        """
+        block = self.surface_data[0][block_index]
+        raise NotImplementedError("Implement this method")
 
 
 class PyvistaFlowFieldDataset:
