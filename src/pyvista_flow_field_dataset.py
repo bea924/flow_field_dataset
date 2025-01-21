@@ -7,7 +7,7 @@ VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 
 
 # TODO: Put the real ones here
-SurfaceFieldType = Literal["pressure", "temperature", "shear_stress", "heat_flux"]
+SurfaceFieldType = Literal["Pressure", "Temperature", "WallShearStressMagnitude", "WallShearStress_0", "WallShearStress_1", "WallShearStress_2"]
 
 
 class PyvistaSample:
@@ -20,31 +20,22 @@ class PyvistaSample:
     @property
     def surface_data(self):
         if self._surface_data is None:
-            if (self._surface_data.endswith(".cgns")):
-                self._surface_data = pv.CGNSReader(self.surface_path)
-            else:
-                self._surface_data = pv.read(self.surface_path)
+            self._surface_data = pv.read(self.surface_path)
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
         return self._surface_data
 
     @property
     def volume_data(self):
         if self._volume_data is None:
-            if (self.volume_path.endswith(".cgns")):
-                reader = pv.CGNSReader(self.volume_path)
-                reader.load_boundary_patch = False
-                ds = reader.read()
-                self._volume_data = ds
-            else:
-                self._volume_data = pv.read(self.volume_path)
+            self._volume_data = pv.read(self.volume_path)
         # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
         return self._volume_data
 
     def plot_surface(self, field: SurfaceFieldType):
-        self.surface_data.plot(field)
+        self.surface_data.plot(scalars=field)
 
     def plot_volume(self, field: VolumeFieldType):
-        self.volume_data.plot(field, opacity=0.5)
+        self.volume_data[0][0][0].plot(scalars=field, opacity=0.7)
 
     def get_points(self) -> np.ndarray:
         """
@@ -56,7 +47,7 @@ class PyvistaSample:
         """
         # TODO check if same works for non cgns
         block = self.volume_data[0][0]
-        return block.points
+        return block.cell_centers().points
 
 
     def get_surface_points(self, block_index: int) -> np.ndarray:
