@@ -138,7 +138,6 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         self,
         cache_dir: str,
         pyvista_dataset: PyvistaFlowFieldDataset | None = None,
-        transforms: list[Callable[[dgl.DGLGraph], dgl.DGLGraph]] = [],
         normalize: bool = True,
     ):
         """
@@ -151,7 +150,6 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             The directory where the dataset converted to DGLGraphs is stored. Default None.
         """
         self.cache_dir = os.path.abspath(cache_dir)
-        self.transforms = transforms
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
         if pyvista_dataset is not None:
@@ -163,6 +161,9 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
                 g = self.pyvista_to_volume_dgl(sample)
                 dgl.save_graphs(os.path.join(self.cache_dir, f"{i}.dgl"), g)
         self.files = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
+
+        # first do not normalize to compute the stats, then normalize
+        self.do_normalization = False
         if pyvista_dataset is not None:
             node_stats = self.compute_node_stats()
             edge_stats = self.compute_edge_stats()
@@ -175,8 +176,6 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             self.node_means, self.node_stds = node_stats
             self.edge_means, self.edge_stds = edge_stats
         self.do_normalization = normalize
-        if normalize:
-            self.transforms.insert(0, self.normalize)
 
     def __len__(self):
         return len(self.files)
@@ -185,9 +184,9 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         """
         Get the graph at the given index."""
         filename = os.path.join(self.cache_dir, self.files[idx])
-        g= dgl.load_graphs(filename)[0][0]
-        for t in self.transforms:
-            g = t(g)
+        g = dgl.load_graphs(filename)[0][0]
+        if self.do_normalization:
+            g = self.normalize(g)
         return g
 
     @classmethod
