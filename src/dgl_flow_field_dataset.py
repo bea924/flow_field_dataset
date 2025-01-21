@@ -220,6 +220,9 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         graph.ndata["Pressure"] = torch.tensor(
             grid.cell_data["Pressure"], dtype=torch.float32
         )
+        graph.ndata["Temperature"] = torch.tensor(
+            grid.cell_data["Temperature"], dtype=torch.float32
+        )
         centers = torch.tensor(grid.cell_centers().points, dtype=torch.float32)
         graph.ndata["Position"] = centers
 
@@ -310,7 +313,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
 
     def normalize(self, graph: dgl.DGLGraph) -> dgl.DGLGraph:
         """
-        Normalize the features of the graph.
+        Normalize the features of the graph in place.
 
         Parameters:
         -----------
@@ -329,16 +332,58 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
 
     def denormalize(self, graph: dgl.DGLGraph):
         """
-        Denormalize the features of the graph.
+        Denormalize the features of the graph in place.
 
         Parameters:
         -----------
         graph: dgl.DGLGraph
             The graph to denormalize.
         """
-        # TODO: Implement this method
+        
+        for key in graph.ndata.keys():
+            graph.ndata[key] = (
+                graph.ndata[key] * torch.tensor(self.node_stds[key])
+            ) + torch.tensor(self.node_means[key])
+        for key in graph.edata.keys():
+            graph.edata[key] = (
+                graph.edata[key] * torch.tensor(self.edge_stds[key])
+            ) + torch.tensor(self.edge_means[key])
         return graph
+        
+    def dgl_to_pyvista_polydata(self, graph: dgl.DGLGraph) -> pv.PolyData:
+        """
+        Convert a DGLGraph of the volume flow field to a Pyvista PolyData object. This will not be the original mesh since the graph only contains the cell centers and the connectivity, not the cell points
 
+        Parameters:
+        -----------
+        graph: dgl.DGLGraph
+            The DGLGraph to convert.
+
+        Returns:
+        --------
+        pv.PolyData: The converted PolyData object.
+        """
+        if self.do_normalization:
+            graph = self.denormalize(graph)
+        grid = pv.PolyData(graph.ndata["Position"].numpy())
+        grid.point_data["Pressure"] = graph.ndata["Pressure"].numpy()
+        grid.point_data["WallShearStress_0"] = graph.ndata["ShearStress"][:, 0].numpy()
+        grid.point_data["WallShearStress_1"] = graph.ndata["ShearStress"][:, 1].numpy()
+        grid.point_data["WallShearStress_2"] = graph.ndata["ShearStress"][:, 2].numpy()
+        grid.point_data["Temperature"] = graph.ndata["Temperature"].numpy()
+        return grid
+
+    def plot_surface(self, graph: dgl.DGLGraph):
+        """
+        Plot the surface of the graph.
+
+        Parameters:
+        -----------
+        graph: dgl.DGLGraph
+            The graph to plot.
+        """
+        grid = self.dgl_to_pyvista_polydata(graph)
+        grid.plot(render_points_as_spheres=True)
     @classmethod
     def l2_loss(cls, graph1: dgl.DGLGraph, graph2: dgl.DGLGraph):
         """
