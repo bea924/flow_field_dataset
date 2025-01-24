@@ -6,8 +6,7 @@ import numpy as np
 VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 
 
-# TODO: Put the real ones here
-SurfaceFieldType = Literal["Pressure", "Temperature", "WallShearStressMagnitude", "WallShearStress_0", "WallShearStress_1", "WallShearStress_2"]
+SurfaceFieldType = Literal["Pressure", "Temperature", "WallShearStressMagnitude", "WallShearStress_0", "WallShearStress_1", "WallShearStress_2", "CellArea", "Normal_0","Normal_1", "Normal_2"]
 
 
 class PyvistaSample:

@@ -247,6 +247,8 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         graph.ndata["Temperature"] = torch.zeros((num_cells,), dtype=torch.float32)
         graph.ndata["Position"] = torch.zeros((num_cells, 3), dtype=torch.float32)
         graph.ndata["ShearStress"] = torch.zeros((num_cells, 3), dtype=torch.float32)
+        graph.ndata["Normal"] = torch.zeros((num_cells, 3), dtype=torch.float32)
+        graph.ndata["CellArea"] = torch.zeros((num_cells,), dtype=torch.float32)
         offset = 0
         for block_index in block_indices:
             grid = sample.surface_data[0][block_index]
@@ -268,6 +270,12 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
 
             shear_stress = torch.stack(shear_stresses, dim=1)
             graph.ndata["ShearStress"][offset:end_offset] = shear_stress
+            graph.ndata["Normal"][offset:end_offset] = torch.tensor(
+                grid.extract_surface().face_normals, dtype=torch.float32
+            )
+            graph.ndata["CellArea"][offset:end_offset] = torch.tensor(
+                grid.compute_cell_sizes(length=False,area=True,volume=False).cell_data['Area'], dtype=torch.float32
+            )
             offset += grid.n_cells
         connectivity_vectors = (
             graph.ndata["Position"][edges_to] - graph.ndata["Position"][edges_from]
@@ -411,6 +419,10 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         grid.point_data["WallShearStress_1"] = graph.ndata["ShearStress"][:, 1].numpy()
         grid.point_data["WallShearStress_2"] = graph.ndata["ShearStress"][:, 2].numpy()
         grid.point_data["Temperature"] = graph.ndata["Temperature"].numpy()
+        grid.point_data["Normal_0"] = graph.ndata["Normal"][:, 0].numpy()
+        grid.point_data["Normal_1"] = graph.ndata["Normal"][:, 1].numpy()
+        grid.point_data["Normal_2"] = graph.ndata["Normal"][:, 2].numpy()
+        grid.point_data["CellArea"] = graph.ndata["CellArea"].numpy()
         return grid
 
     def plot_surface(self, graph: dgl.DGLGraph, scalar: SurfaceFieldType):
