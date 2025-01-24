@@ -477,9 +477,10 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         grid.point_data["Normal_1"] = graph.ndata["Normal"][:, 1].detach().numpy()
         grid.point_data["Normal_2"] = graph.ndata["Normal"][:, 2].detach().numpy()
         grid.point_data["CellArea"] = graph.ndata["CellArea"].detach().numpy()
+        grid.point_data["BodyID"] = graph.ndata["BodyID"].detach().numpy()
         return grid
 
-    def plot_surface(self, graph: dgl.DGLGraph, scalar: SurfaceFieldType):
+    def plot_surface(self, graph: dgl.DGLGraph, scalar: SurfaceFieldType, object_id: Optional[int] = None):
         """
         Plot the surface of the graph.
 
@@ -488,6 +489,9 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         graph: dgl.DGLGraph
             The graph to plot.
         """
+        if object_id is not None:
+            mask = graph.ndata["BodyID"] == object_id
+            graph = graph.subgraph(mask)
         grid = self.dgl_to_pyvista_polydata(graph)
         grid.plot(
             scalars=scalar,
