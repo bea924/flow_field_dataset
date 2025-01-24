@@ -432,19 +432,20 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         """
         if self.do_normalization:
             graph = self.denormalize(graph)
+        graph = graph.to("cpu")
         e_from, e_to = graph.edges()
         num_nodes_per_edge = torch.ones_like(e_from) * 2
-        edges = torch.stack([num_nodes_per_edge, e_from, e_to], dim=1)
-        grid = pv.PolyData(graph.ndata["Position"].numpy(), edges.numpy())
-        grid.point_data["Pressure"] = graph.ndata["Pressure"].numpy()
-        grid.point_data["WallShearStress_0"] = graph.ndata["ShearStress"][:, 0].numpy()
-        grid.point_data["WallShearStress_1"] = graph.ndata["ShearStress"][:, 1].numpy()
-        grid.point_data["WallShearStress_2"] = graph.ndata["ShearStress"][:, 2].numpy()
-        grid.point_data["Temperature"] = graph.ndata["Temperature"].numpy()
-        grid.point_data["Normal_0"] = graph.ndata["Normal"][:, 0].numpy()
-        grid.point_data["Normal_1"] = graph.ndata["Normal"][:, 1].numpy()
-        grid.point_data["Normal_2"] = graph.ndata["Normal"][:, 2].numpy()
-        grid.point_data["CellArea"] = graph.ndata["CellArea"].numpy()
+        edges = torch.stack([num_nodes_per_edge, e_from, e_to], dim=1).detach()
+        grid = pv.PolyData(graph.ndata["Position"].detach().numpy(), edges.numpy())
+        grid.point_data["Pressure"] = graph.ndata["Pressure"].detach().numpy()
+        grid.point_data["WallShearStress_0"] = graph.ndata["ShearStress"][:, 0].detach().numpy()
+        grid.point_data["WallShearStress_1"] = graph.ndata["ShearStress"][:, 1].detach().numpy()
+        grid.point_data["WallShearStress_2"] = graph.ndata["ShearStress"][:, 2].detach().numpy()
+        grid.point_data["Temperature"] = graph.ndata["Temperature"].detach().numpy()
+        grid.point_data["Normal_0"] = graph.ndata["Normal"][:, 0].detach().numpy()
+        grid.point_data["Normal_1"] = graph.ndata["Normal"][:, 1].detach().numpy()
+        grid.point_data["Normal_2"] = graph.ndata["Normal"][:, 2].detach().numpy()
+        grid.point_data["CellArea"] = graph.ndata["CellArea"].detach().numpy()
         return grid
 
     def plot_surface(self, graph: dgl.DGLGraph, scalar: SurfaceFieldType):
