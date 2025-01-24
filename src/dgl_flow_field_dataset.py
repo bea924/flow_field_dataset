@@ -362,7 +362,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         """
         raise NotImplementedError("Implement this method")
 
-    def normalize(self, graph: dgl.DGLGraph) -> dgl.DGLGraph:
+    def normalize_inplace(self, graph: dgl.DGLGraph) -> None:
         """
         Normalize the features of the graph in place.
 
@@ -377,19 +377,35 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             if graph.ndata[key].dtype != torch.float32:
                 continue
             graph.ndata[key] = (
-                graph.ndata[key] - torch.tensor(self.node_means[key])
-            ) / torch.tensor(self.node_stds[key])
+                graph.ndata[key] - torch.tensor(self.node_means[key], device=graph.device)
+            ) / torch.tensor(self.node_stds[key], device=graph.device)
         for key in graph.edata.keys():
             if key not in self.edge_means or key not in self.edge_stds:
                 continue
             if graph.edata[key].dtype != torch.float32:
                 continue
             graph.edata[key] = (
-                graph.edata[key] - torch.tensor(self.edge_means[key])
-            ) / torch.tensor(self.edge_stds[key])
+                graph.edata[key] - torch.tensor(self.edge_means[key], device=graph.device)
+            ) / torch.tensor(self.edge_stds[key], device=graph.device)
+    def normalize(self, graph: dgl.DGLGraph)-> dgl.DGLGraph:
+        """
+        Normalize the features of the graph.
+
+        Parameters:
+        -----------
+        graph: dgl.DGLGraph
+            The graph to normalize.
+
+        Returns:
+        --------
+        dgl.DGLGraph: The normalized graph.
+        """
+        graph = graph.clone()
+        self.normalize_inplace(graph)
         return graph
 
-    def denormalize(self, graph: dgl.DGLGraph):
+
+    def denormalize_inplace(self, graph: dgl.DGLGraph)-> None:
         """
         Denormalize the features of the graph in place.
 
@@ -405,16 +421,31 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             if graph.ndata[key].dtype != torch.float32:
                 continue
             graph.ndata[key] = (
-                graph.ndata[key] * torch.tensor(self.node_stds[key])
-            ) + torch.tensor(self.node_means[key])
+                graph.ndata[key] * torch.tensor(self.node_stds[key], device=graph.device)
+            ) + torch.tensor(self.node_means[key], device=graph.device)
         for key in graph.edata.keys():
             if key not in self.edge_means or key not in self.edge_stds:
                 continue
             if graph.edata[key].dtype != torch.float32:
                 continue
             graph.edata[key] = (
-                graph.edata[key] * torch.tensor(self.edge_stds[key])
-            ) + torch.tensor(self.edge_means[key])
+                graph.edata[key] * torch.tensor(self.edge_stds[key], device=graph.device)
+            ) + torch.tensor(self.edge_means[key], device=graph.device)
+    def denormalize(self, graph: dgl.DGLGraph)-> dgl.DGLGraph:
+        """
+        Denormalize the features of the graph.
+
+        Parameters:
+        -----------
+        graph: dgl.DGLGraph
+            The graph to denormalize.
+
+        Returns:
+        --------
+        dgl.DGLGraph: The denormalized graph.
+        """
+        graph = graph.clone()
+        self.denormalize_inplace(graph)
         return graph
 
     def dgl_to_pyvista_polydata(self, graph: dgl.DGLGraph) -> pv.PolyData:
@@ -466,6 +497,36 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             line_width=4,
             style="wireframe",
         )
+    
+    def compute_aggregate_force(self, graph: dgl.DGLGraph, object_id: Optional[int]=None) -> torch.Tensor:
+        """
+        Compute the aggregate force acting on the surface.
+
+        Parameters:
+        -----------
+        graph: dgl.DGLGraph
+            The graph to compute the aggregate force for.
+        object_id: Optional[int]
+            The object id to compute the aggregate force for. If None, the aggregate force for all objects is computed.
+
+        Returns:
+        --------
+        torch.Tensor: The aggregate force acting on the surface.
+        """
+        if self.do_normalization:
+            graph = self.denormalize(graph)
+        cell_areas = graph.ndata["CellArea"]
+
+        cell_pressure_forces = graph.ndata["Pressure"][:,None] * cell_areas[:,None] * graph.ndata["Normal"]
+        cell_shear_forces = graph.ndata["ShearStress"] * cell_areas[:,None]
+        if object_id is not None:
+            mask = graph.ndata["BodyID"] == object_id
+            cell_pressure_forces = cell_pressure_forces[mask]
+            cell_shear_forces = cell_shear_forces[mask]
+        pressure_force = cell_pressure_forces.sum(dim=0)
+        shear_force = cell_shear_forces.sum(dim=0)
+        return pressure_force + shear_force
+
 
     @classmethod
     def l2_loss(cls, graph1: dgl.DGLGraph, graph2: dgl.DGLGraph):
