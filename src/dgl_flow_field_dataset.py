@@ -145,8 +145,10 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         normalize: bool = True,
         patches_to_include: Optional[List[int]] = None,
     ):
-        """
-        Creates a new DGLSurfaceFlowFieldDataset. If a PyvistaFlowFieldDataset is provided, it will be converted to DGLGraphs and stored in the cache directory. If not, the dataset will be loaded from the cache directory.
+        """Dataset of surface flow fields represented as DGLGraphs.
+
+        If a PyvistaFlowFieldDataset is provided, it will be converted to DGLGraphs and stored in the cache directory. If not, the dataset will be loaded from the cache directory.
+        
         Parameters:
         -----------
         cache_dir: str
