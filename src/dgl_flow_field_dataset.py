@@ -249,6 +249,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         graph.ndata["ShearStress"] = torch.zeros((num_cells, 3), dtype=torch.float32)
         graph.ndata["Normal"] = torch.zeros((num_cells, 3), dtype=torch.float32)
         graph.ndata["CellArea"] = torch.zeros((num_cells,), dtype=torch.float32)
+        graph.ndata["BodyID"] = torch.zeros((num_cells,), dtype=torch.int32)
         offset = 0
         for block_index in block_indices:
             grid = sample.surface_data[0][block_index]
@@ -276,6 +277,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             graph.ndata["CellArea"][offset:end_offset] = torch.tensor(
                 grid.compute_cell_sizes(length=False,area=True,volume=False).cell_data['Area'], dtype=torch.float32
             )
+            graph.ndata["BodyID"][offset:end_offset] = block_index
             offset += grid.n_cells
         connectivity_vectors = (
             graph.ndata["Position"][edges_to] - graph.ndata["Position"][edges_from]
@@ -294,6 +296,8 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         for i in range(len(self)):
             graph = self[i]
             for key in graph.ndata.keys():
+                if graph.ndata[key].dtype != torch.float32:
+                    continue
                 if key not in graph_means:
                     graph_means[key] = []
                     graph_stds[key] = []
@@ -322,6 +326,8 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         for i in range(len(self)):
             graph = self[i]
             for key in graph.edata.keys():
+                if graph.edata[key].dtype != torch.float32:
+                    continue
                 if key not in graph_means:
                     graph_means[key] = []
                     graph_stds[key] = []
@@ -366,10 +372,18 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             The graph to normalize.
         """
         for key in graph.ndata.keys():
+            if key not in self.node_means or key not in self.node_stds:
+                continue
+            if graph.ndata[key].dtype != torch.float32:
+                continue
             graph.ndata[key] = (
                 graph.ndata[key] - torch.tensor(self.node_means[key])
             ) / torch.tensor(self.node_stds[key])
         for key in graph.edata.keys():
+            if key not in self.edge_means or key not in self.edge_stds:
+                continue
+            if graph.edata[key].dtype != torch.float32:
+                continue
             graph.edata[key] = (
                 graph.edata[key] - torch.tensor(self.edge_means[key])
             ) / torch.tensor(self.edge_stds[key])
@@ -386,10 +400,18 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         """
 
         for key in graph.ndata.keys():
+            if key not in self.node_means or key not in self.node_stds:
+                continue
+            if graph.ndata[key].dtype != torch.float32:
+                continue
             graph.ndata[key] = (
                 graph.ndata[key] * torch.tensor(self.node_stds[key])
             ) + torch.tensor(self.node_means[key])
         for key in graph.edata.keys():
+            if key not in self.edge_means or key not in self.edge_stds:
+                continue
+            if graph.edata[key].dtype != torch.float32:
+                continue
             graph.edata[key] = (
                 graph.edata[key] * torch.tensor(self.edge_stds[key])
             ) + torch.tensor(self.edge_means[key])
