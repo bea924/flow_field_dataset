@@ -45,7 +45,7 @@ class PyvistaSample:
         np.ndarray: The points of the dataset. Shape: (n_points, 3)
         """
         # TODO check if same works for non cgns
-        block = self.volume_data[0][0]
+        block = self.volume_data[0][0][0]
         return block.cell_centers().points
 
 
