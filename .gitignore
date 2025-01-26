@@ -2,3 +2,4 @@
 **/__pycache__/
 datasets/dgl_surface
 examples/meshgraphnet/checkpoints
+examples/meshgraphnet/datasets/ds_huggingface

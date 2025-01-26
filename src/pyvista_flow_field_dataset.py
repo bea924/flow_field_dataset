@@ -3,6 +3,10 @@ import pyvista as pv
 from typing import Literal
 import numpy as np
 
+from huggingface_hub import list_repo_files, hf_hub_download
+import shutil
+import os
+
 VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 
 
@@ -128,3 +132,50 @@ class PyvistaFlowFieldDataset:
 
     def __getitem__(self, idx: int):
         return self.samples[idx]
+    
+    @classmethod
+    def load_from_huggingface(cls,path: str="datasets/ds_huggingface", hub_repo: str="peteole/CoolMucSmall", num_samples=3)->"PyvistaFlowFieldDataset":
+        """
+        Download all files from the specified Hugging Face repository to a given local path and load them as a PyvistaFlowFieldDataset.
+
+        Args:
+            path (str): The local directory where the data will be saved.
+            hub_repo (str): The Hugging Face repository ID (e.g., 'bert-base-uncased').
+        
+        Returns:
+            PyvistaFlowFieldDataset
+        """
+        if not os.path.exists(path):
+            os.makedirs(path)
+        try:
+            # Get the list of files in the repository
+            files = [file for file in list_repo_files(hub_repo,repo_type="dataset") if file.endswith('.cgns')]
+        except Exception as e:
+            raise ValueError(f"Error getting the list of files in repository '{hub_repo}': {e}")
+        volume_files = [f for f in files if "volume" in f]
+        surface_files = [f for f in files if "surface" in f]
+        volume_files=sorted(volume_files)
+        surface_files=sorted(surface_files)
+        assert len(volume_files)==len(surface_files), "Number of volume and surface files must be equal"
+        total_samples = len(volume_files)
+        print(f"Found {total_samples} files in repository '{hub_repo}'.")
+        num_samples = min(num_samples, total_samples)
+        surface_files = surface_files[:num_samples]
+        volume_files = volume_files[:num_samples]
+        print(f"Downloading {len(files)} files from repository '{hub_repo}' to '{path}'.")
+
+        files_to_download = volume_files + surface_files
+        for i, file in enumerate(files_to_download, start=1):
+            try:
+                #Test if file exists
+                if os.path.exists(os.path.join(path, file)):
+                    print(f"File {i}/{len(files_to_download)}: {file} already exists. Skipping download.")
+                    continue
+                # Download each file and copy it to the target path
+                print(f"Downloading file {i}/{len(files_to_download)}: {file}")
+                hf_hub_download(repo_id=hub_repo, filename=file, local_dir=path, repo_type="dataset")
+            except Exception as e:
+                print(f"Error downloading file '{file}': {e}")
+
+        print(f"All files have been downloaded to '{path}'.")
+        return cls(path)
