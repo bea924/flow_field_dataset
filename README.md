@@ -33,3 +33,13 @@ See the `examples` folder for a detailed example of how to use the library.
 - Voxelized Flow Field Support
 - Inference of Surface Quantities from Volumetric Predictions
 - Enhanced Metadata Accessibility
+
+## Development
+
+This package uses [uv](https://docs.astral.sh/uv/) for package management. To get started, first install uv. Then run
+
+```bash
+uv venv
+uv sync
+```
+to create a virtualenv and install the required dependencies in it. For dgl, run the [install script](examples/meshgraphnet/install.sh).
