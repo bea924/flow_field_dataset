@@ -82,8 +82,27 @@ class VoxelFlowFieldSample:
         self._data = None
         return self
 
+    def to_pyvista(self):
+        xmin, xmax, ymin, ymax, zmin, zmax = self.bounding_box
+        x, y, z = np.mgrid[
+            xmin:xmax:complex(self.resolution[0]),
+            ymin:ymax:complex(self.resolution[1]),
+            zmin:zmax:complex(self.resolution[2]),
+        ]
+        grid = pv.StructuredGrid(x, y, z)
+        grid["Pressure"] = self.get_field("Pressure").numpy().flatten(order="F")
+        grid["Temperature"] = self.get_field("Temperature").numpy().flatten(order="F")
+        grid["Velocity"] = self.get_field("Velocity").numpy().reshape(-1, 3, order="F")
+        grid["vtkValidPointMask"] = self.get_field("Mask").numpy().flatten(order="F").astype(np.int8)
+        grid['vtkGhostType'] = np.zeros(len(grid.points), dtype=np.uint8) 
+        grid['vtkGhostType'][~ self.get_field("Mask").numpy().flatten(order="F")]=32
+        grid.cell_data['vtkGhostType'] = np.zeros(grid.n_cells, dtype=np.uint8)
+        grid.cell_data['vtkGhostType'][~ self.get_field("Mask").numpy()[1:,1:,1:].flatten(order="F")]= 32
+        return grid
+
     def plot(self, field: VoxelField):
-        raise NotImplementedError("Implement this method")
+        grid = self.to_pyvista()
+        grid.plot(scalars=field, cmap="viridis")
 
 
 class VoxelFlowFieldDataset(torch.utils.data.Dataset):
