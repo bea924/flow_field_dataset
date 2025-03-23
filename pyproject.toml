@@ -8,5 +8,6 @@ dependencies = [
     "huggingface-hub>=0.27.1",
     "ipykernel>=6.29.5",
     "pyvista[all]>=0.44.2",
+    "tensordict>=0.5.0",
     "torch==2.4.0",
 ]

@@ -103,6 +103,13 @@ class PyvistaSample:
         block = self.surface_data[0][block_index]
         raise NotImplementedError("Implement this method")
 
+    def get_bounding_box(self):
+        """
+        Returns the bounding box of the volume data.
+        The bounding box is a six-tuple (xmin, xmax, ymin, ymax, zmin, zmax).
+        """
+        return self.volume_data.bounds
+
 
 class PyvistaFlowFieldDataset:
     def __init__(self, data_dir: str):
@@ -179,3 +186,20 @@ class PyvistaFlowFieldDataset:
 
         print(f"All files have been downloaded to '{path}'.")
         return cls(path)
+    def get_bounds(self):
+        """
+        Returns the bounding box of the volume data.
+        The bounding box is a six-tuple (xmin, xmax, ymin, ymax, zmin, zmax).
+        """
+        bounds = (np.inf, -np.inf, np.inf, -np.inf, np.inf, -np.inf)
+        for sample in self.samples:
+            sample_bounds = sample.get_bounding_box()
+            bounds = (
+                min(bounds[0], sample_bounds[0]),
+                max(bounds[1], sample_bounds[1]),
+                min(bounds[2], sample_bounds[2]),
+                max(bounds[3], sample_bounds[3]),
+                min(bounds[4], sample_bounds[4]),
+                max(bounds[5], sample_bounds[5]),
+            )
+        return bounds
