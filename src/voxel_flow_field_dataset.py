@@ -6,6 +6,8 @@ import torch
 from tensordict import TensorDict
 import numpy as np
 import pyvista as pv
+import torch.utils
+import torch.utils.data
 
 from src.pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
@@ -237,3 +239,20 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
         for sample in self.samples:
             sample.normalization = None
         return self
+
+    def get_default_loadable_dataset(self):
+        """Get a dataset that returns the mask as X and all flow features concatenated as Y"""
+        return DefaultVoxelDataset(self)
+
+class DefaultVoxelDataset(torch.utils.data.Dataset):
+    
+    def __init__(self, ds: VoxelFlowFieldDataset):
+        super().__init__()
+        self.ds=ds
+    
+    def __getitem__(self, index: int):
+        item = self.ds[index]
+        return item.mask, item.Y
+
+    def __len__(self):
+        return len(self.ds)
