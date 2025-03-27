@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import json
 import os
+import time
 from typing import Literal, Union
 import torch
 from tensordict import TensorDict
@@ -183,30 +184,31 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
                     os.remove(os.path.join(root, file))
                 for dir in dirs:
                     os.rmdir(os.path.join(root, dir))
-            bounding_box = config.pyvista_dataset.get_bounds()
+            self.bounding_box = config.pyvista_dataset.get_bounds()
+            self.resolution = config.resolution
             for i in range(len(config.pyvista_dataset)):
                 sample = config.pyvista_dataset[i]
                 sample = VoxelFlowFieldSample.from_pyvista(
                     sample,
                     os.path.join(self.cache_dir, f"{i}.pt"),
                     config.resolution,
-                    bounding_box,
+                    self.bounding_box,
                 )
                 self.samples.append(sample)
             self.normalization = self.compute_normalization()
             json.dump(
-                {"resolution": config.resolution, "bounding_box": bounding_box, "normalization": self.normalization},
+                {"resolution": config.resolution, "bounding_box": self.bounding_box, "normalization": self.normalization},
                 open(os.path.join(self.cache_dir, "metadata.json"), "w"),
             )
         else:
             metadata = json.load(open(os.path.join(self.cache_dir, "metadata.json")))
-            resolution = metadata["resolution"]
-            bounding_box = metadata["bounding_box"]
+            self.resolution = metadata["resolution"]
+            self.bounding_box = metadata["bounding_box"]
             self.normalization = metadata["normalization"]
             for file in os.listdir(self.cache_dir):
                 if file.endswith(".pt"):
                     self.samples.append(
-                        VoxelFlowFieldSample(os.path.join(self.cache_dir, file), bounding_box, resolution)
+                        VoxelFlowFieldSample(os.path.join(self.cache_dir, file), self.bounding_box, self.resolution)
                     )
 
     def __len__(self):
@@ -233,6 +235,18 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
         for sample in self.samples:
             sample.normalization = self.normalization
         return self
+    
+    @classmethod
+    def prediction_to_sample(cls,mask: torch.Tensor,Y:torch.Tensor):
+        """
+        Converts a prediction to a sample. The mask is used to create a new sample with the same bounding box and resolution as the original dataset.
+        """
+        # get the bounding box and resolution from the original dataset
+        bounding_box = cls.bounding_box
+        resolution = cls.resolution
+        # create a new sample from the prediction
+        timestamp_formatted = time.strftime("%Y-%m-%d_%H-%M-%S")
+        return VoxelFlowFieldSample.from_mask_y(mask,Y,bounding_box,resolution,os.path.join(cls.cache_dir,"predictions",f"prediction_{timestamp_formatted}.pt"))
     
     def unnormalize(self):
         """Unnormalizes the dataset in place."""
