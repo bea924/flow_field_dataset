@@ -70,7 +70,11 @@ class VoxelFlowFieldSample:
     
     @classmethod 
     def from_mask_y(cls,mask: torch.Tensor,Y:torch.Tensor, bounding_box: tuple[float, float, float, float, float, float], resolution: tuple[int, int, int],  save_path: str, normalization: Normalization | None = None) -> "VoxelFlowFieldSample":
-        
+        assert mask.shape == tuple(resolution), f"Mask shape {mask.shape} does not match resolution {resolution}"
+        assert Y.shape == (resolution[0], resolution[1], resolution[2], 5), f"Y shape {Y.shape} does not match resolution {resolution}"
+        # check if the mask is a boolean tensor
+        assert mask.dtype == torch.bool, f"Mask dtype {mask.dtype} is not boolean"
+        assert Y.dtype == torch.float32, f"Y dtype {Y.dtype} is not float32"
         velocity = Y[:,:,:,:3]
         pressure = Y[:,:,:,3]
         temperature = Y[:,:,:,4]
@@ -88,12 +92,13 @@ class VoxelFlowFieldSample:
             "Mask": mask,
             "Position": position
         })
+        data=data.to('cpu')
         # denormalize the data
         if normalization is not None:
-            for field in data:
+            for field in data.keys():
                 if field in normalization:
                     mean, std = normalization[field]
-                    data[field] = data[field] * std + mean
+                    data[field] = data[field] * torch.tensor(std,device=data.device) + torch.tensor(mean,device=data.device)
         data.save(save_path)
         return cls(save_path, bounding_box, resolution, normalization)
 
@@ -236,17 +241,20 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
             sample.normalization = self.normalization
         return self
     
-    @classmethod
-    def prediction_to_sample(cls,mask: torch.Tensor,Y:torch.Tensor):
+    def prediction_to_sample(self,mask: torch.Tensor,Y:torch.Tensor):
         """
         Converts a prediction to a sample. The mask is used to create a new sample with the same bounding box and resolution as the original dataset.
+        
+        Args:
+        - mask: The mask of the prediction. Shape: (resolution_x, resolution_y, resolution_z)
+        - Y: The prediction. Shape: (resolution_x, resolution_y, resolution_z, 5)
         """
         # get the bounding box and resolution from the original dataset
-        bounding_box = cls.bounding_box
-        resolution = cls.resolution
+        bounding_box = self.bounding_box
+        resolution = self.resolution
         # create a new sample from the prediction
         timestamp_formatted = time.strftime("%Y-%m-%d_%H-%M-%S")
-        return VoxelFlowFieldSample.from_mask_y(mask,Y,bounding_box,resolution,os.path.join(cls.cache_dir,"predictions",f"prediction_{timestamp_formatted}.pt"))
+        return VoxelFlowFieldSample.from_mask_y(mask,Y,bounding_box,resolution,os.path.join(self.cache_dir,"predictions",f"prediction_{timestamp_formatted}.pt"),normalization=self.normalization)
     
     def unnormalize(self):
         """Unnormalizes the dataset in place."""
