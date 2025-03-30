@@ -9,6 +9,10 @@ import numpy as np
 import pyvista as pv
 import torch.utils
 import torch.utils.data
+import matplotlib.pyplot as plt
+from matplotlib import cm
+import ipywidgets as widgets
+from ipywidgets import interact, fixed
 
 from src.pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
@@ -160,6 +164,80 @@ class VoxelFlowFieldSample:
     def plot(self, field: VoxelField):
         grid = self.to_pyvista()
         grid.plot(scalars=field, cmap="viridis")
+    
+    def plot_slice(self, field: VoxelField, slice_idx:int | None = None, axis: Literal["x", "y", "z"] = "z"):
+        """
+        Plots a slice of the field at the specified index along the specified axis.
+        Args:
+        - field: The field to plot.
+        - slice_idx: The index of the slice to plot. If None, the middle slice is used.
+        - axis: The axis along which to plot the slice. Can be "x", "y", or "z".
+        """
+        field_values = self.get_field(field)
+        field_np = field_values.cpu().numpy()
+        slice = None
+        if axis == "x":
+            if slice_idx is None:
+                slice_idx = field_np.shape[0] // 2
+            slice = field_np[slice_idx, :, :]
+        elif axis == "y":
+            if slice_idx is None:
+                slice_idx = field_np.shape[1] // 2
+            slice = field_np[:, slice_idx, :]
+        elif axis == "z":
+            if slice_idx is None:
+                slice_idx = field_np.shape[2] // 2
+            slice = field_np[:, :, slice_idx]
+        else:
+            raise ValueError("Axis must be 'x', 'y', or 'z'.")
+        plt.imshow(slice, cmap="viridis")
+        plt.colorbar()
+        if axis == "x":
+            plt.xlabel("y")
+            plt.ylabel("z")
+            plt.yticks(ticks=np.arange(0, self.resolution[1], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[2], self.bounding_box[3], num=self.resolution[1])[::5]])
+            plt.xticks(ticks=np.arange(0, self.resolution[2], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[4], self.bounding_box[5], num=self.resolution[2])[::5]])
+            plt.title(f"{field} at x = {self.bounding_box[0] + (slice_idx / self.resolution[0]) * (self.bounding_box[1] - self.bounding_box[0]):.2f}")
+        elif axis == "y":
+            plt.xlabel("x")
+            plt.ylabel("z")
+            plt.yticks(ticks=np.arange(0, self.resolution[0], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[0], self.bounding_box[1], num=self.resolution[0])[::5]])
+            plt.xticks(ticks=np.arange(0, self.resolution[2], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[4], self.bounding_box[5], num=self.resolution[2])[::5]])
+            plt.title(f"{field} at y = {self.bounding_box[2] + (slice_idx / self.resolution[1]) * (self.bounding_box[3] - self.bounding_box[2]):.2f}")
+        elif axis == "z":
+            plt.xlabel("x")
+            plt.ylabel("y")
+            plt.yticks(ticks=np.arange(0, self.resolution[0], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[0], self.bounding_box[1], num=self.resolution[0])[::5]])
+            plt.xticks(ticks=np.arange(0, self.resolution[1], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[2], self.bounding_box[3], num=self.resolution[1])[::5]])
+            plt.title(f"{field} at z = {self.bounding_box[4] + (slice_idx / self.resolution[2]) * (self.bounding_box[5] - self.bounding_box[4]):.2f}")
+        
+        # preserve aspect ratio
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.grid()
+        plt.tight_layout()
+        plt.show()
+    
+    def plot_slice_interactively(self, field: VoxelField, axis: Literal["x", "y", "z"] = "z"):
+        """
+        Plots a slice of the field at the specified index along the specified axis.
+        Args:
+        - field: The field to plot.
+        - axis: The axis along which to plot the slice. Can be "x", "y", or "z".
+        """
+        def update_plot(slice_idx):
+            self.plot_slice(field, slice_idx, axis)
+        interact(
+            update_plot,
+            slice_idx=widgets.IntSlider(
+                min=0,
+                max=self.resolution[{"x": 0, "y": 1, "z": 2}[axis]] - 1,
+                step=1,
+                value=self.resolution[{"x": 0, "y": 1, "z": 2}[axis]] // 2,
+            ),
+            field=fixed(field),
+            axis=fixed(axis),
+        )
+        
 
 
 @dataclass
