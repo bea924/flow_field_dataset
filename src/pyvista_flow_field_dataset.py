@@ -1,11 +1,11 @@
 import os
+from pathlib import Path
 import pyvista as pv
 from typing import Literal
 import numpy as np
 
-from huggingface_hub import list_repo_files, hf_hub_download
+import huggingface_hub as hf #type: ignore
 import shutil
-import os
 
 VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 
@@ -14,9 +14,9 @@ SurfaceFieldType = Literal["Pressure", "Temperature", "WallShearStressMagnitude"
 
 
 class PyvistaSample:
-    def __init__(self, volume_path: str, surface_path: str):
-        self.volume_path = volume_path
-        self.surface_path = surface_path
+    def __init__(self, volume_path: str | Path, surface_path: str | Path):
+        self.volume_path = Path(volume_path)
+        self.surface_path = Path(surface_path)
         self._volume_data: pv.MultiBlock | None = None
         self._surface_data: pv.MultiBlock | None = None
 
@@ -86,22 +86,6 @@ class PyvistaSample:
         # TODO: Test if this frees the memory
         self._volume_data = None
         self._surface_data = None
-    
-    def compute_aggregate_force(self, block_index: int) -> np.ndarray:
-        """
-        Compute the aggregate force acting on the surface of the block with the given index. This is done by integrating the force acting on each point of the surface.
-
-        Parameters:
-        -----------
-        block_index: int
-            The index of the block to compute the aggregate force for.
-
-        Returns:
-        --------
-        np.ndarray: The aggregate force acting on the surface of the block.
-        """
-        block = self.surface_data[0][block_index]
-        raise NotImplementedError("Implement this method")
 
     def get_bounding_box(self):
         """
@@ -112,26 +96,8 @@ class PyvistaSample:
 
 
 class PyvistaFlowFieldDataset:
-    def __init__(self, data_dir: str):
-        self.data_dir = os.path.abspath(data_dir)
-        possible_extensions = [
-            ".ply",
-            ".vtp",
-            ".stl",
-            ".vtk",
-            ".geo",
-            ".obj",
-            ".iv",
-            ".vtu",
-            ".cgns",
-        ]
-        files = os.listdir(self.data_dir)
-        files = [f for f in files if any(f.endswith(ext) for ext in possible_extensions)]
-        surface_files = [f for f in files if "surface" in f]
-        volume_files = [f for f in files if "volume" in f]
-        surface_files=sorted(surface_files)
-        volume_files=sorted(volume_files)
-        self.samples = [PyvistaSample(os.path.join(data_dir,v), os.path.join(data_dir,s)) for v, s in zip(volume_files, surface_files)]
+    def __init__(self, samples: list[PyvistaSample]):
+        self.samples = samples
         
 
     def __len__(self):
@@ -141,7 +107,30 @@ class PyvistaFlowFieldDataset:
         return self.samples[idx]
     
     @classmethod
-    def load_from_huggingface(cls,path: str="datasets/ds_huggingface", hub_repo: str="peteole/CoolMucSmall", num_samples=3)->"PyvistaFlowFieldDataset":
+    def try_from_directory(cls, data_dir: str | Path, num_samples: int) -> "None | PyvistaFlowFieldDataset":
+        data_dir = os.path.abspath(data_dir)
+        data_dir = Path(data_dir)
+        volume_dir = data_dir / "volume"
+        surface_dir = data_dir / "surface"
+        os.makedirs(volume_dir, exist_ok=True)
+        os.makedirs(surface_dir, exist_ok=True)
+        volume_files = list(volume_dir.glob("*.cgns"))
+        surface_files = list(surface_dir.glob("*.cgns"))
+        volume_indices = [int(f.stem.split("_")[-1]) for f in volume_files]
+        surface_indices = [int(f.stem.split("_")[-1]) for f in surface_files]
+        volume_indices.sort()
+        surface_indices.sort()
+        if volume_indices != surface_indices:
+            return None
+        volume_files =sorted(volume_files, key=lambda x: int(x.stem.split("_")[-1]))
+        surface_files =sorted(surface_files, key=lambda x: int(x.stem.split("_")[-1]))
+        samples = [PyvistaSample(v, s) for v, s in zip(volume_files, surface_files)]
+        if len(samples) < num_samples:
+            return None
+        samples = samples[:num_samples]
+        return cls(samples)
+    @classmethod
+    def load_from_huggingface(cls,data_dir: str | Path, num_samples=3)->"PyvistaFlowFieldDataset":
         """
         Download all files from the specified Hugging Face repository to a given local path and load them as a PyvistaFlowFieldDataset.
 
@@ -152,40 +141,68 @@ class PyvistaFlowFieldDataset:
         Returns:
             PyvistaFlowFieldDataset
         """
-        if not os.path.exists(path):
-            os.makedirs(path)
-        try:
-            # Get the list of files in the repository
-            files = [file for file in list_repo_files(hub_repo,repo_type="dataset") if file.endswith('.cgns')]
-        except Exception as e:
-            raise ValueError(f"Error getting the list of files in repository '{hub_repo}': {e}")
-        volume_files = [f for f in files if "volume" in f]
-        surface_files = [f for f in files if "surface" in f]
-        volume_files=sorted(volume_files)
-        surface_files=sorted(surface_files)
-        assert len(volume_files)==len(surface_files), "Number of volume and surface files must be equal"
-        total_samples = len(volume_files)
-        print(f"Found {total_samples} files in repository '{hub_repo}'.")
-        num_samples = min(num_samples, total_samples)
-        surface_files = surface_files[:num_samples]
-        volume_files = volume_files[:num_samples]
-        print(f"Downloading {len(files)} files from repository '{hub_repo}' to '{path}'.")
-
-        files_to_download = volume_files + surface_files
-        for i, file in enumerate(files_to_download, start=1):
-            try:
-                #Test if file exists
-                if os.path.exists(os.path.join(path, file)):
-                    print(f"File {i}/{len(files_to_download)}: {file} already exists. Skipping download.")
+        loaded = cls.try_from_directory(data_dir, num_samples)
+        if loaded is not None:
+            print(f"Loaded {len(loaded)} samples from '{data_dir}'.")
+            return loaded
+        
+        data_dir = os.path.abspath(data_dir)
+        data_dir = Path(data_dir)
+        volume_dir = data_dir / "volume"
+        surface_dir = data_dir / "surface"
+        tmp_dir = data_dir / "tmp"
+        os.makedirs(tmp_dir, exist_ok=True)
+        
+        # remove existing files
+        if os.path.exists(volume_dir):
+            shutil.rmtree(volume_dir)
+        if os.path.exists(surface_dir):
+            shutil.rmtree(surface_dir)
+        os.makedirs(volume_dir, exist_ok=True)
+        os.makedirs(surface_dir, exist_ok=True)
+        
+        repo_id = "datasets/bgce/cooldata"
+        fs = hf.HfFileSystem()
+        runs =fs.glob(f"{repo_id}/production_run*", detail=False)
+        samples: list[PyvistaSample] = []
+        runs = sorted(runs, key=lambda x: int(x.split("/")[-1].removeprefix("production_run")))
+        for run in runs:
+            run_name = os.path.basename(run)
+            zip_files_in_run = list(fs.glob(f"{run}/batch_*.zip", detail=False))
+            zip_files_in_run = sorted(zip_files_in_run, key=lambda x: int(x.split("/")[-1].removeprefix("batch_").removesuffix(".zip")))
+            for zip_file in zip_files_in_run:
+                local_path = os.path.join(tmp_dir,run_name, os.path.basename(zip_file))
+                fs.download(zip_file, local_path)
+                # Extract the zip file
+                unzip_dir = os.path.join(tmp_dir, run_name, os.path.basename(zip_file).removesuffix(".zip"))
+                os.makedirs(unzip_dir, exist_ok=True)
+                shutil.unpack_archive(local_path, unzip_dir)
+                # Match indices
+                volume_files = list(Path(unzip_dir).glob("volume_design_*.cgns"))
+                surface_files = list(Path(unzip_dir).glob("surface_design_*.cgns"))
+                volume_indices = [int(f.stem.split("_")[-1]) for f in volume_files]
+                surface_indices = [int(f.stem.split("_")[-1]) for f in surface_files]
+                volume_indices.sort()
+                surface_indices.sort()
+                if volume_indices != surface_indices:
+                    print(f"Skipping {run_name} due to mismatched indices.")
                     continue
-                # Download each file and copy it to the target path
-                print(f"Downloading file {i}/{len(files_to_download)}: {file}")
-                hf_hub_download(repo_id=hub_repo, filename=file, local_dir=path, repo_type="dataset")
-            except Exception as e:
-                print(f"Error downloading file '{file}': {e}")
-
-        print(f"All files have been downloaded to '{path}'.")
-        return cls(path)
+                volume_files = sorted(volume_files, key=lambda x: int(x.stem.split("_")[-1]))
+                surface_files = sorted(surface_files, key=lambda x: int(x.stem.split("_")[-1]))
+                for v, s in zip(volume_files, surface_files):
+                    # Copy the files to the new directory
+                    shutil.copy(v, volume_dir)
+                    shutil.copy(s, surface_dir)
+                    moved_volume_path = volume_dir / v.name
+                    moved_surface_path = surface_dir / s.name
+                    samples.append(PyvistaSample(moved_volume_path, moved_surface_path))
+                    if len(samples) >= num_samples:
+                        shutil.rmtree(tmp_dir)
+                        return cls(samples)
+        # Clean up temporary directory
+        shutil.rmtree(tmp_dir)
+                
+        return cls(samples)
     def get_bounds(self):
         """
         Returns the bounding box of the volume data.
