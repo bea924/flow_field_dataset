@@ -11,3 +11,4 @@ build:
 python:
   install:
     - method: poetry
+      path: .
