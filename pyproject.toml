@@ -1,15 +1,22 @@
-[project]
+[tool.poetry]
 name = "flow-field-dataset"
 version = "0.1.0"
-description = "Add your description here"
+description = ""
+authors = ["Eya Chouaib, Firas Drass, Jana Huhne, Ole Petersen, Beatrice Picco, Daniel Schenk"]
 readme = "README.md"
-requires-python = "==3.11.11"
-dependencies = [
-    "huggingface-hub>=0.27.1",
-    "ipykernel>=6.29.5",
-    "pyvista[all]>=0.44.2",
-    "tensordict>=0.5.0",
-    "torch==2.4.0",
-    "torchvision>=0.19.0",
-    "tqdm>=4.67.1",
-]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+torch = "2.4.1"
+h5py = "^3.12.1"
+pyvista = {extras = ["jupyter"], version = "^0.44.2"}
+trame = "^3.7.6"
+tensordict = "^0.5.0"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
