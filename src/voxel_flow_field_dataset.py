@@ -303,7 +303,7 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> VoxelFlowFieldSample:
         return self.samples[idx]
     
     def compute_normalization(self) -> Normalization:
