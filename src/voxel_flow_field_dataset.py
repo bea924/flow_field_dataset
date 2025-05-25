@@ -1,8 +1,10 @@
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 import json
 import os
 import time
 from typing import Literal, Union
+import concurrent
 import torch
 from tensordict import TensorDict
 import numpy as np
@@ -13,6 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import ipywidgets as widgets
 from ipywidgets import interact, fixed
+from tqdm import tqdm
 
 from src.pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
@@ -272,16 +275,15 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
                 for dir in dirs:
                     os.rmdir(os.path.join(root, dir))
             self.bounding_box = config.pyvista_dataset.get_bounds()
+            config.pyvista_dataset.unload()
             self.resolution = config.resolution
-            for i in range(len(config.pyvista_dataset)):
-                sample_pv = config.pyvista_dataset[i]
-                sample = VoxelFlowFieldSample.from_pyvista(
-                    sample_pv,
-                    os.path.join(self.cache_dir, f"{i}.pt"),
-                    config.resolution,
-                    self.bounding_box,
-                )
-                self.samples.append(sample)
+            args_list = [
+                (config.pyvista_dataset[i], self.cache_dir, i, config.resolution, self.bounding_box)
+                for i in range(len(config.pyvista_dataset))
+            ]
+            with ProcessPoolExecutor() as executor:
+                results = list(tqdm(executor.map(_create_voxel_sample, args_list), total=len(args_list), desc="Voxelizing samples"))
+            self.samples.extend(results)
             self.normalization = self.compute_normalization()
             json.dump(
                 {"resolution": config.resolution, "bounding_box": self.bounding_box, "normalization": self.normalization},
@@ -360,3 +362,12 @@ class DefaultVoxelDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.ds)
+    
+def _create_voxel_sample(args):
+    sample_pv, cache_dir, i, resolution, bounding_box = args
+    return VoxelFlowFieldSample.from_pyvista(
+        sample_pv,
+        os.path.join(cache_dir, f"{i}.pt"),
+        resolution,
+        bounding_box,
+    )
