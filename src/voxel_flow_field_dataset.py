@@ -123,16 +123,20 @@ class VoxelFlowFieldSample:
         z = np.linspace(zmin, zmax, resolution[2])
         x, y, z = np.meshgrid(x, y, z, indexing='ij')
         grid = pv.StructuredGrid(x, y, z)
+        was_loaded = sample.is_loaded
         volume_data = sample.volume_data[0][0][0]
         interpolated = grid.sample(volume_data)
+        velocities = [interpolated[f"Velocity_{i}"] for i in range(3)]
         data = TensorDict({
             "Pressure": torch.tensor(interpolated["Pressure"].reshape(resolution,order="F"),dtype=torch.float32),
             "Temperature": torch.tensor(interpolated["Temperature"].reshape(resolution,order="F"),dtype=torch.float32),
-            "Velocity": torch.tensor(interpolated["Velocity"].reshape(resolution + (3,),order="F"),dtype=torch.float32),
+            "Velocity": torch.stack([torch.tensor(v.reshape(resolution,order="F"),dtype=torch.float32) for v in velocities],dim=-1),
             "Mask": torch.tensor(interpolated["vtkValidPointMask"].reshape(resolution,order="F"),dtype=torch.bool),
             "Position": torch.tensor(np.stack([x,y,z],axis=-1).reshape(resolution + (3,),order="F"),dtype=torch.float32)
         })
         data.save(save_path)
+        if not was_loaded:
+            sample.unload()
         return cls(save_path, bounding_box, resolution)
 
     def load(self):
@@ -270,9 +274,9 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
             self.bounding_box = config.pyvista_dataset.get_bounds()
             self.resolution = config.resolution
             for i in range(len(config.pyvista_dataset)):
-                sample = config.pyvista_dataset[i]
+                sample_pv = config.pyvista_dataset[i]
                 sample = VoxelFlowFieldSample.from_pyvista(
-                    sample,
+                    sample_pv,
                     os.path.join(self.cache_dir, f"{i}.pt"),
                     config.resolution,
                     self.bounding_box,

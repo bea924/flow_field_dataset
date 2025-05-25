@@ -4,13 +4,26 @@ import pyvista as pv
 from typing import Literal
 import numpy as np
 
-import huggingface_hub as hf #type: ignore
+import huggingface_hub as hf  # type: ignore
 import shutil
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from tqdm import tqdm
 
 VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 
 
-SurfaceFieldType = Literal["Pressure", "Temperature", "WallShearStressMagnitude", "WallShearStress_0", "WallShearStress_1", "WallShearStress_2", "CellArea", "Normal_0","Normal_1", "Normal_2"]
+SurfaceFieldType = Literal[
+    "Pressure",
+    "Temperature",
+    "WallShearStressMagnitude",
+    "WallShearStress_0",
+    "WallShearStress_1",
+    "WallShearStress_2",
+    "CellArea",
+    "Normal_0",
+    "Normal_1",
+    "Normal_2",
+]
 
 
 class PyvistaSample:
@@ -52,7 +65,6 @@ class PyvistaSample:
         block = self.volume_data[0][0][0]
         return block.cell_centers().points
 
-
     def get_surface_points(self, block_index: int) -> np.ndarray:
         """
         Returns the points of the surface dataset as a numpy array.
@@ -63,7 +75,6 @@ class PyvistaSample:
         """
         block = self.surface_data[0][block_index]
         return block.points
-    
 
     def get_labeled_surface_points(self) -> np.ndarray:
         """
@@ -75,8 +86,17 @@ class PyvistaSample:
         """
         labeled_points = []
         for i, block in enumerate(self.surface_data[0]):
-            labeled_points.append(np.hstack((block.points, np.full((block.n_points, 1), i))))
+            labeled_points.append(
+                np.hstack((block.points, np.full((block.n_points, 1), i)))
+            )
         return np.vstack(labeled_points)
+
+    @property
+    def is_loaded(self) -> bool:
+        """
+        Returns True if the volume and surface data are loaded, False otherwise.
+        """
+        return self._volume_data is not None and self._surface_data is not None
 
     def load(self):
         self.volume_data
@@ -92,22 +112,27 @@ class PyvistaSample:
         Returns the bounding box of the volume data.
         The bounding box is a six-tuple (xmin, xmax, ymin, ymax, zmin, zmax).
         """
-        return self.volume_data.bounds
+        was_loaded = self.is_loaded
+        bounds = self.volume_data.bounds
+        if not was_loaded:
+            self.unload()
+        return bounds
 
 
 class PyvistaFlowFieldDataset:
     def __init__(self, samples: list[PyvistaSample]):
         self.samples = samples
-        
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx: int):
         return self.samples[idx]
-    
+
     @classmethod
-    def try_from_directory(cls, data_dir: str | Path, num_samples: int) -> "None | PyvistaFlowFieldDataset":
+    def try_from_directory(
+        cls, data_dir: str | Path, num_samples: int
+    ) -> "None | PyvistaFlowFieldDataset":
         data_dir = os.path.abspath(data_dir)
         data_dir = Path(data_dir)
         volume_dir = data_dir / "volume"
@@ -116,28 +141,31 @@ class PyvistaFlowFieldDataset:
         os.makedirs(surface_dir, exist_ok=True)
         volume_files = list(volume_dir.glob("*.cgns"))
         surface_files = list(surface_dir.glob("*.cgns"))
-        volume_indices = [int(f.stem.split("_")[-1]) for f in volume_files]
-        surface_indices = [int(f.stem.split("_")[-1]) for f in surface_files]
+        volume_indices = [int(f.stem.split("_")[-2]) for f in volume_files]
+        surface_indices = [int(f.stem.split("_")[-2]) for f in surface_files]
         volume_indices.sort()
         surface_indices.sort()
         if volume_indices != surface_indices:
             return None
-        volume_files =sorted(volume_files, key=lambda x: int(x.stem.split("_")[-1]))
-        surface_files =sorted(surface_files, key=lambda x: int(x.stem.split("_")[-1]))
+        volume_files = sorted(volume_files, key=lambda x: int(x.stem.split("_")[-2]))
+        surface_files = sorted(surface_files, key=lambda x: int(x.stem.split("_")[-2]))
         samples = [PyvistaSample(v, s) for v, s in zip(volume_files, surface_files)]
         if len(samples) < num_samples:
             return None
         samples = samples[:num_samples]
         return cls(samples)
+
     @classmethod
-    def load_from_huggingface(cls,data_dir: str | Path, num_samples=3)->"PyvistaFlowFieldDataset":
+    def load_from_huggingface(
+        cls, data_dir: str | Path, num_samples=3
+    ) -> "PyvistaFlowFieldDataset":
         """
         Download all files from the specified Hugging Face repository to a given local path and load them as a PyvistaFlowFieldDataset.
 
         Args:
             path (str): The local directory where the data will be saved.
             hub_repo (str): The Hugging Face repository ID (e.g., 'bert-base-uncased').
-        
+
         Returns:
             PyvistaFlowFieldDataset
         """
@@ -145,14 +173,14 @@ class PyvistaFlowFieldDataset:
         if loaded is not None:
             print(f"Loaded {len(loaded)} samples from '{data_dir}'.")
             return loaded
-        
+
         data_dir = os.path.abspath(data_dir)
         data_dir = Path(data_dir)
         volume_dir = data_dir / "volume"
         surface_dir = data_dir / "surface"
         tmp_dir = data_dir / "tmp"
         os.makedirs(tmp_dir, exist_ok=True)
-        
+
         # remove existing files
         if os.path.exists(volume_dir):
             shutil.rmtree(volume_dir)
@@ -160,35 +188,50 @@ class PyvistaFlowFieldDataset:
             shutil.rmtree(surface_dir)
         os.makedirs(volume_dir, exist_ok=True)
         os.makedirs(surface_dir, exist_ok=True)
-        
-        repo_id = "datasets/bgce/cooldata"
+
+        repo_id = "datasets/bgce/cooldata-v2"
         fs = hf.HfFileSystem()
-        runs =fs.glob(f"{repo_id}/production_run*", detail=False)
+        runs = fs.glob(f"{repo_id}/runs/run_*", detail=False)
         samples: list[PyvistaSample] = []
-        runs = sorted(runs, key=lambda x: int(x.split("/")[-1].removeprefix("production_run")))
+        runs = sorted(runs, key=lambda x: int(x.split("/")[-1].removeprefix("run_")))
         for run in runs:
             run_name = os.path.basename(run)
             zip_files_in_run = list(fs.glob(f"{run}/batch_*.zip", detail=False))
-            zip_files_in_run = sorted(zip_files_in_run, key=lambda x: int(x.split("/")[-1].removeprefix("batch_").removesuffix(".zip")))
+            zip_files_in_run = sorted(
+                zip_files_in_run,
+                key=lambda x: int(
+                    x.split("/")[-1].removeprefix("batch_").removesuffix(".zip")
+                ),
+            )
             for zip_file in zip_files_in_run:
-                local_path = os.path.join(tmp_dir,run_name, os.path.basename(zip_file))
-                fs.download(zip_file, local_path)
+                local_path = os.path.join(tmp_dir, run_name, os.path.basename(zip_file))
+                try:
+                    fs.download(zip_file, local_path)
+                except Exception as e:
+                    print(f"Failed to download {zip_file} for run {run_name}: {e}")
+                    continue
                 # Extract the zip file
-                unzip_dir = os.path.join(tmp_dir, run_name, os.path.basename(zip_file).removesuffix(".zip"))
+                unzip_dir = os.path.join(
+                    tmp_dir, run_name, os.path.basename(zip_file).removesuffix(".zip")
+                )
                 os.makedirs(unzip_dir, exist_ok=True)
                 shutil.unpack_archive(local_path, unzip_dir)
                 # Match indices
-                volume_files = list(Path(unzip_dir).glob("volume_design_*.cgns"))
-                surface_files = list(Path(unzip_dir).glob("surface_design_*.cgns"))
-                volume_indices = [int(f.stem.split("_")[-1]) for f in volume_files]
-                surface_indices = [int(f.stem.split("_")[-1]) for f in surface_files]
+                volume_files = list(Path(unzip_dir).glob("volume_design_*_p.cgns"))
+                surface_files = list(Path(unzip_dir).glob("surface_design_*_p.cgns"))
+                volume_indices = [int(f.stem.split("_")[-2]) for f in volume_files]
+                surface_indices = [int(f.stem.split("_")[-2]) for f in surface_files]
                 volume_indices.sort()
                 surface_indices.sort()
                 if volume_indices != surface_indices:
                     print(f"Skipping {run_name} due to mismatched indices.")
                     continue
-                volume_files = sorted(volume_files, key=lambda x: int(x.stem.split("_")[-1]))
-                surface_files = sorted(surface_files, key=lambda x: int(x.stem.split("_")[-1]))
+                volume_files = sorted(
+                    volume_files, key=lambda x: int(x.stem.split("_")[-2])
+                )
+                surface_files = sorted(
+                    surface_files, key=lambda x: int(x.stem.split("_")[-2])
+                )
                 for v, s in zip(volume_files, surface_files):
                     # Copy the files to the new directory
                     shutil.copy(v, volume_dir)
@@ -201,16 +244,27 @@ class PyvistaFlowFieldDataset:
                         return cls(samples)
         # Clean up temporary directory
         shutil.rmtree(tmp_dir)
-                
+
         return cls(samples)
+
     def get_bounds(self):
         """
         Returns the bounding box of the volume data.
         The bounding box is a six-tuple (xmin, xmax, ymin, ymax, zmin, zmax).
         """
         bounds = (np.inf, -np.inf, np.inf, -np.inf, np.inf, -np.inf)
-        for sample in self.samples:
-            sample_bounds = sample.get_bounding_box()
+        self.unload()
+
+        with ProcessPoolExecutor() as executor:
+            sample_bounds_list = list(
+                tqdm(
+                    executor.map(get_sample_bounds, self.samples),
+                    total=len(self.samples),
+                    desc="Computing bounds",
+                )
+            )
+
+        for sample_bounds in sample_bounds_list:
             bounds = (
                 min(bounds[0], sample_bounds[0]),
                 max(bounds[1], sample_bounds[1]),
@@ -219,4 +273,22 @@ class PyvistaFlowFieldDataset:
                 min(bounds[4], sample_bounds[4]),
                 max(bounds[5], sample_bounds[5]),
             )
+
         return bounds
+
+    def load_to_memory(self):
+        """
+        Load all samples into memory.
+        """
+        for sample in self.samples:
+            sample.load()
+    def unload(self):
+        """
+        Unload all samples from memory.
+        """
+        for sample in self.samples:
+            sample.unload()
+
+
+def get_sample_bounds(sample):
+    return sample.get_bounding_box()
