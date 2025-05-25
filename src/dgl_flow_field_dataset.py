@@ -165,7 +165,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
                 os.remove(os.path.join(self.cache_dir, f))
             for i in range(len(pyvista_dataset)):
                 sample = pyvista_dataset[i]
-                g = self.pyvista_to_volume_dgl(sample, patches_to_include)
+                g = self.pyvista_to_surface_dgl(sample, patches_to_include)
                 dgl.save_graphs(os.path.join(self.cache_dir, f"{i}.dgl"), g)
         self.files = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
 
@@ -197,7 +197,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         return g
 
     @classmethod
-    def pyvista_to_volume_dgl(
+    def pyvista_to_surface_dgl(
         cls, sample: PyvistaSample, block_indices: Optional[List[int]] = None
     ) -> dgl.DGLGraph:
         """
@@ -264,15 +264,15 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             )
             centers = torch.tensor(grid.cell_centers().points, dtype=torch.float32)
             graph.ndata["Position"][offset:end_offset, :] = centers
+            if "WallShearStress_0" in grid.cell_data:
+                shear_stresses = (
+                    torch.tensor(grid.cell_data["WallShearStress_0"], dtype=torch.float32),
+                    torch.tensor(grid.cell_data["WallShearStress_1"], dtype=torch.float32),
+                    torch.tensor(grid.cell_data["WallShearStress_2"], dtype=torch.float32),
+                )
 
-            shear_stresses = (
-                torch.tensor(grid.cell_data["WallShearStress_0"], dtype=torch.float32),
-                torch.tensor(grid.cell_data["WallShearStress_1"], dtype=torch.float32),
-                torch.tensor(grid.cell_data["WallShearStress_2"], dtype=torch.float32),
-            )
-
-            shear_stress = torch.stack(shear_stresses, dim=1)
-            graph.ndata["ShearStress"][offset:end_offset] = shear_stress
+                shear_stress = torch.stack(shear_stresses, dim=1)
+                graph.ndata["ShearStress"][offset:end_offset] = shear_stress
             graph.ndata["Normal"][offset:end_offset] = torch.tensor(
                 grid.extract_surface().face_normals, dtype=torch.float32
             )
