@@ -2,6 +2,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 import json
 import os
+from pathlib import Path
 import time
 from typing import Literal, Union
 import concurrent
@@ -16,6 +17,7 @@ from matplotlib import cm
 import ipywidgets as widgets
 from ipywidgets import interact, fixed
 from tqdm import tqdm
+import shutil
 
 from src.pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
@@ -120,6 +122,8 @@ class VoxelFlowFieldSample:
         """
         Interpolates the volume data from the sample to a voxel grid and saves it to a file.
         """
+        if os.path.exists(save_path):
+            return cls(save_path, bounding_box, resolution)
         xmin, xmax, ymin, ymax, zmin, zmax = bounding_box
         x = np.linspace(xmin, xmax, resolution[0])
         y = np.linspace(ymin, ymax, resolution[1])
@@ -258,25 +262,36 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
         self,
         cache_dir: str,
         config: VoxelFlowFieldDatasetConfig | None = None,
+        resume_loading_from_cache: bool = True,
     ):
         """
         Dataset of voxelized flow fields. The constructor either loads the dataset from a cache directory or converts a
         PyvistaFlowFieldDataset to a DGLFlowFieldDataset.
         """
-        self.cache_dir = os.path.abspath(cache_dir)
-        if not os.path.exists(self.cache_dir):
-            os.makedirs(self.cache_dir)
+        self.cache_dir = Path(os.path.abspath(cache_dir))
+        if not self.cache_dir.exists():
+            self.cache_dir.mkdir(parents=True)
         self.samples: list[VoxelFlowFieldSample] = []
         if config is not None:
             # clear the cache directory
-            for root, dirs, files in os.walk(self.cache_dir, topdown=False):
-                for file in files:
-                    os.remove(os.path.join(root, file))
-                for dir in dirs:
-                    os.rmdir(os.path.join(root, dir))
-            self.bounding_box = config.pyvista_dataset.get_bounds()
+            if not resume_loading_from_cache and self.cache_dir.exists():
+                shutil.rmtree(self.cache_dir)
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
             config.pyvista_dataset.unload()
             self.resolution = config.resolution
+            if os.path.exists(os.path.join(self.cache_dir, "metadata.json")):
+                metadata = json.load(open(os.path.join(self.cache_dir, "metadata.json")))
+                if tuple(metadata["resolution"]) == config.resolution:
+                    # If the metadata matches, we can use it
+                    self.resolution = metadata["resolution"]
+                    self.bounding_box = metadata["bounding_box"]
+                    self.normalization = metadata["normalization"]
+            if not hasattr(self, "bounding_box"):
+                # If the bounding box is not set, we use the bounding box of the PyvistaFlowFieldDataset
+                self.bounding_box = config.pyvista_dataset.get_bounds()
+            
+            if not hasattr(self, "normalization"):
+                self.normalization = self.compute_normalization()
             args_list = [
                 (config.pyvista_dataset[i], self.cache_dir, i, config.resolution, self.bounding_box)
                 for i in range(len(config.pyvista_dataset))
@@ -284,7 +299,8 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
             with ProcessPoolExecutor() as executor:
                 results = list(tqdm(executor.map(_create_voxel_sample, args_list), total=len(args_list), desc="Voxelizing samples"))
             self.samples.extend(results)
-            self.normalization = self.compute_normalization()
+
+            # else, we compute the normalization and save the metadata
             json.dump(
                 {"resolution": config.resolution, "bounding_box": self.bounding_box, "normalization": self.normalization},
                 open(os.path.join(self.cache_dir, "metadata.json"), "w"),
@@ -303,8 +319,44 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, idx) -> VoxelFlowFieldSample:
+    def __getitem__(self, idx: int | slice | list[int]):
+        if isinstance(idx, slice):
+            return self.slice(idx.start, idx.stop)
+        if isinstance(idx, list):
+            new_ds = VoxelFlowFieldDataset(self.cache_dir)
+            new_ds.samples = [self.samples[i] for i in idx]
+            new_ds.bounding_box = self.bounding_box
+            new_ds.resolution = self.resolution
+            new_ds.normalization = self.normalization
+            return new_ds
+        if idx < 0 or idx >= len(self.samples):
+            raise IndexError(f"Index {idx} out of bounds for dataset of length {len(self.samples)}")
+        if not isinstance(idx, int):
+            raise TypeError(f"Index must be an integer or a slice, got {type(idx)}")
         return self.samples[idx]
+    
+    def slice(self, start: int, end: int):
+        """
+        Returns a slice of the dataset.
+        
+        Args:
+        - start: The start index of the slice.
+        - end: The end index of the slice.
+        
+        Returns:
+        A new VoxelFlowFieldDataset containing the specified slice.
+        """
+        new_ds = VoxelFlowFieldDataset(self.cache_dir)
+        new_ds.samples = self.samples[start:end]
+        new_ds.bounding_box = self.bounding_box
+        new_ds.resolution = self.resolution
+        new_ds.normalization = self.normalization
+        return new_ds
+    
+    def shuffle(self):
+        """Shuffles the dataset in place."""
+        np.random.shuffle(self.samples)
+        return self
     
     def compute_normalization(self) -> Normalization:
         normalization: Normalization = {}
