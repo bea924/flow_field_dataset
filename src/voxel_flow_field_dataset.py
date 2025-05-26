@@ -1,5 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -53,14 +54,14 @@ class VoxelFlowFieldSample:
             # TODO: Check if data is a valid flow field dataset, i.e., has the necessary point data
         return self._data
     
-    def get_field(self, field: VoxelField) -> torch.Tensor:
+    def get_field(self, field: VoxelField, normalized = True) -> torch.Tensor:
         """
         Returns the specified field of the flow field as a torch.Tensor.
         Shape:
         - Pressure, Temperature: (resolution_x, resolution_y, resolution_z)
         - Velocity, Position: (resolution_x, resolution_y, resolution_z, 3)
         """
-        if self.normalization is not None:
+        if self.normalization is not None and normalized:
             mean, std = self.normalization[field]
             return (self.data[field] - torch.tensor(mean,device=self.data.device)) / torch.tensor(std,device=self.data.device)
         return self.data[field]
@@ -184,7 +185,7 @@ class VoxelFlowFieldSample:
         - slice_idx: The index of the slice to plot. If None, the middle slice is used.
         - axis: The axis along which to plot the slice. Can be "x", "y", or "z".
         """
-        field_values = self.get_field(field)
+        field_values = self.get_field(field, normalized=False)
         field_np = field_values.cpu().numpy()
         slice = None
         if axis == "x":
@@ -388,8 +389,10 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
         # get the bounding box and resolution from the original dataset
         bounding_box = self.bounding_box
         resolution = self.resolution
+        now = datetime.now()
+
         # create a new sample from the prediction
-        timestamp_formatted = time.strftime("%Y-%m-%d_%H-%M-%S")
+        timestamp_formatted = now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
         return VoxelFlowFieldSample.from_mask_y(mask,Y,bounding_box,resolution,os.path.join(self.cache_dir,"predictions",f"prediction_{timestamp_formatted}.pt"),normalization=self.normalization)
     
     def unnormalize(self):
