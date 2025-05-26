@@ -33,7 +33,8 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
             The directory where the dataset converted to DGLGraphs is stored. Default None.
         """
         self.cache_dir = Path(os.path.abspath(cache_dir))
-        
+        self.node_stats: tuple[dict,dict] | None = None
+        self.edge_stats: tuple[dict,dict] | None = None
         if not self.cache_dir.exists():
             self.cache_dir.mkdir(parents=True)
         existing_files = [f for f in self.cache_dir.iterdir() if f.suffix == ".dgl"]
@@ -58,6 +59,7 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
                 )
         self.files = [f for f in self.cache_dir.iterdir() if f.suffix == ".dgl"]
 
+    
     def __len__(self):
         return len(self.files)
 
@@ -65,6 +67,8 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         filename = os.path.join(self.cache_dir, self.files[idx])
         if filename.endswith(".dgl"):
             g = dgl.load_graphs(filename)[0][0]
+            if self.node_stats is not None and self.edge_stats is not None:
+                self.normalize_inplace(g)
             return g
         else:
             raise ValueError(f"File {filename} is not a DGLGraph file.")
@@ -142,8 +146,30 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         pv.PolyData: The converted PolyData object.
         """
         raise NotImplementedError("Implement this method")
-
-    def normalize(cls, graph: dgl.DGLGraph):
+    def normalize(self):
+        if os.path.exists(os.path.join(self.cache_dir, "stats.json")):
+            with open(os.path.join(self.cache_dir, "stats.json"), "r") as f:
+                stats = json.load(f)
+                if "node_stats" in stats and "edge_stats" in stats:
+                    self.node_stats = stats["node_stats"]
+                    self.edge_stats = stats["edge_stats"]
+        else:
+            self.node_stats = self.compute_node_stats()
+            self.edge_stats = self.compute_edge_stats()
+            with open(
+                os.path.join(self.cache_dir, "stats.json"), "w"
+            ) as f:
+                json.dump(
+                    {
+                        "node_stats": self.node_stats,
+                        "edge_stats": self.edge_stats,
+                    },
+                    f,
+                )
+    def denormalize(self):
+        self.node_stats = None
+        self.edge_stats = None
+    def normalize_inplace(self, graph: dgl.DGLGraph):
         """
         Normalize the features of the graph.
 
@@ -152,9 +178,26 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         graph: dgl.DGLGraph
             The graph to normalize.
         """
-        raise NotImplementedError("Implement this method")
+        for key in graph.ndata.keys():
+            if key not in self.node_stats[0] or key not in self.node_stats[1]:
+                continue
+            if graph.ndata[key].dtype != torch.float32:
+                continue
+            graph.ndata[key] = (
+                graph.ndata[key]
+                - torch.tensor(self.node_stats[0][key], device=graph.device)
+            ) / torch.tensor(self.node_stats[1][key], device=graph.device)
+        for key in graph.edata.keys():
+            if key not in self.edge_stats[0] or key not in self.edge_stats[1]:
+                continue
+            if graph.edata[key].dtype != torch.float32:
+                continue
+            graph.edata[key] = (
+                graph.edata[key]
+                - torch.tensor(self.edge_stats[0][key], device=graph.device)
+            ) / torch.tensor(self.edge_stats[1][key], device=graph.device)
 
-    def denormalize(cls, graph: dgl.DGLGraph):
+    def denormalize_inplace(self, graph: dgl.DGLGraph):
         """
         Denormalize the features of the graph.
 
@@ -163,7 +206,84 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         graph: dgl.DGLGraph
             The graph to denormalize.
         """
-        raise NotImplementedError("Implement this method")
+        for key in graph.ndata.keys():
+            if key not in self.node_means or key not in self.node_stds:
+                continue
+            if graph.ndata[key].dtype != torch.float32:
+                continue
+            graph.ndata[key] = (
+                graph.ndata[key]
+                * torch.tensor(self.node_stds[key], device=graph.device)
+            ) + torch.tensor(self.node_means[key], device=graph.device)
+        for key in graph.edata.keys():
+            if key not in self.edge_means or key not in self.edge_stds:
+                continue
+            if graph.edata[key].dtype != torch.float32:
+                continue
+            graph.edata[key] = (
+                graph.edata[key]
+                * torch.tensor(self.edge_stds[key], device=graph.device)
+            ) + torch.tensor(self.edge_means[key], device=graph.device)
+    
+    def compute_node_stats(self) -> tuple[dict[str, float], dict[str, float]]:
+        """
+        Compute the mean and standard deviation of the node features.
+        """
+        graph_means: dict[str, list[float]] = {}
+        graph_stds: dict[str, list[float]] = {}
+        for i in range(len(self)):
+            graph = self[i]
+            for key in graph.ndata.keys():
+                if graph.ndata[key].dtype != torch.float32:
+                    continue
+                if key not in graph_means:
+                    graph_means[key] = []
+                    graph_stds[key] = []
+                graph_means[key].append(graph.ndata[key].mean(dim=0).tolist())
+                graph_stds[key].append(graph.ndata[key].std(dim=0).tolist())
+        means = {
+            key: (np.sum(graph_means[key], axis=0) / len(graph_means[key])).tolist()
+            for key in graph_means
+        }
+        stds = {
+            key: (
+                np.sqrt(
+                    np.sum(np.square(graph_stds[key]), axis=0) / len(graph_stds[key])
+                )
+            ).tolist()
+            for key in graph_stds
+        }
+        return means, stds
+
+    def compute_edge_stats(self) -> tuple[dict[str, float], dict[str, float]]:
+        """
+        Compute the mean and standard deviation of the edge features.
+        """
+        graph_means: dict[str, list[float]] = {}
+        graph_stds: dict[str, list[float]] = {}
+        for i in range(len(self)):
+            graph = self[i]
+            for key in graph.edata.keys():
+                if graph.edata[key].dtype != torch.float32:
+                    continue
+                if key not in graph_means:
+                    graph_means[key] = []
+                    graph_stds[key] = []
+                graph_means[key].append(graph.edata[key].mean(dim=0).tolist())
+                graph_stds[key].append(graph.edata[key].std(dim=0).tolist())
+        means = {
+            key: (np.sum(graph_means[key], axis=0) / len(graph_means[key])).tolist()
+            for key in graph_means
+        }
+        stds = {
+            key: (
+                np.sqrt(
+                    np.sum(np.square(graph_stds[key]), axis=0) / len(graph_stds[key])
+                )
+            ).tolist()
+            for key in graph_stds
+        }
+        return means, stds
 
     @classmethod
     def l2_loss(cls, graph1: dgl.DGLGraph, graph2: dgl.DGLGraph):
