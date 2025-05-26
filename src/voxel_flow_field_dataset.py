@@ -291,8 +291,6 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
                 # If the bounding box is not set, we use the bounding box of the PyvistaFlowFieldDataset
                 self.bounding_box = config.pyvista_dataset.get_bounds()
             
-            if not hasattr(self, "normalization"):
-                self.normalization = self.compute_normalization()
             args_list = [
                 (config.pyvista_dataset[i], self.cache_dir, i, config.resolution, self.bounding_box)
                 for i in range(len(config.pyvista_dataset))
@@ -300,6 +298,8 @@ class VoxelFlowFieldDataset(torch.utils.data.Dataset):
             with ProcessPoolExecutor() as executor:
                 results = list(tqdm(executor.map(_create_voxel_sample, args_list), total=len(args_list), desc="Voxelizing samples"))
             self.samples.extend(results)
+            if not hasattr(self, "normalization"):
+                self.normalization = self.compute_normalization()
 
             # else, we compute the normalization and save the metadata
             json.dump(
