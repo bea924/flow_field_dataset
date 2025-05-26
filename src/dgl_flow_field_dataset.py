@@ -4,6 +4,7 @@ from typing import Callable, List, Optional
 import dgl
 import torch
 import pyvista as pv
+from tqdm import tqdm
 from src.pyvista_flow_field_dataset import (
     PyvistaFlowFieldDataset,
     PyvistaSample,
@@ -45,11 +46,9 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         filename = os.path.join(self.cache_dir, self.files[idx])
         if filename.endswith(".dgl"):
             g = dgl.load_graphs(filename)[0][0]
-            return self.normalize(g)
+            return g
         else:
-            gpv = PyvistaSample.from_file(filename)
-            g = self.pv_to_volume_dgl(gpv.data)
-            return self.normalize(g)
+            raise ValueError(f"File {filename} is not a DGLGraph file.")
 
     @classmethod
     def pyvista_to_volume_dgl(cls, sample: PyvistaSample) -> dgl.DGLGraph:
@@ -66,19 +65,46 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         DGLGraph: The converted graph.
         """
 
-        grid = sample.volume_data[0][0]
+        grid = sample.volume_data[0][0][0]
         edges_from = []
         edges_to = []
 
         # TODO: Speed up this loop
-        for i in range(grid.n_points):
-            neighbors = grid.point_neighbors(i)
+        for i in tqdm(range(grid.n_cells), desc="Converting Pyvista to DGLGraph"):
+            neighbors = grid.cell_neighbors(i)
             edges_from.extend([i] * len(neighbors))
             edges_to.extend(neighbors)
 
-        graph = dgl.graph((edges_from, edges_to), num_nodes=grid.n_points)
-        # graph.ndata['velocity'] = torch.tensor(grid.point_data['Velocity'], dtype=torch.float32)
+        graph = dgl.graph((edges_from, edges_to), num_nodes=grid.n_cells)
         # TODO add the attributes to the nodes from the grid
+        graph.ndata["Pressure"] = torch.tensor(
+            grid.cell_data["Pressure"], dtype=torch.float32
+        )
+        graph.ndata["Temperature"] = torch.tensor(
+            grid.cell_data["Temperature"], dtype=torch.float32
+        )
+        centers = torch.tensor(grid.cell_centers().points, dtype=torch.float32)
+        graph.ndata["Position"] = centers
+        velocities = torch.stack(
+            [
+                torch.tensor(grid.cell_data["Velocity_0"], dtype=torch.float32),
+                torch.tensor(grid.cell_data["Velocity_1"], dtype=torch.float32),
+                torch.tensor(grid.cell_data["Velocity_2"], dtype=torch.float32),
+            ],
+            dim=1,
+        )
+        graph.ndata["Velocity"] = velocities
+        graph.ndata["TurbulentDissipationRate"] = torch.tensor(
+            grid.cell_data["TurbulentDissipationRate"], dtype=torch.float32
+        )
+        graph.ndata["TurbulentKineticEnergy"] = torch.tensor(
+            grid.cell_data["TurbulentKineticEnergy"], dtype=torch.float32
+        )
+        graph.ndata["Volume"] = torch.tensor(grid.cell_data["Volume"], dtype=torch.float32)
+        connectivity_vectors = (
+            graph.ndata["Position"][edges_to] - graph.ndata["Position"][edges_from]
+        )
+        graph.edata["dx"] = connectivity_vectors
         return graph
 
     def volume_dgl_to_pv(self, graph: dgl.DGLGraph) -> pv.PolyData:
@@ -163,7 +189,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             # clear the cache directory
             for f in os.listdir(self.cache_dir):
                 os.remove(os.path.join(self.cache_dir, f))
-            for i in range(len(pyvista_dataset)):
+            for i in tqdm(range(len(pyvista_dataset))):
                 sample = pyvista_dataset[i]
                 g = self.pyvista_to_surface_dgl(sample, patches_to_include)
                 dgl.save_graphs(os.path.join(self.cache_dir, f"{i}.dgl"), g)
@@ -195,6 +221,27 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         if self.do_normalization:
             g = self.normalize(g)
         return g
+    def slice(self, start: int, end: int) -> "DGLSurfaceFlowFieldDataset":
+        """
+        Get a slice of the dataset.
+        """
+        new_dataset = DGLSurfaceFlowFieldDataset(
+            cache_dir=self.cache_dir,
+            pyvista_dataset=None,
+            normalize=self.do_normalization,
+        )
+        new_dataset.files = self.files[start:end]
+        new_dataset.node_means = self.node_means
+        new_dataset.node_stds = self.node_stds
+        new_dataset.edge_means = self.edge_means
+        new_dataset.edge_stds = self.edge_stds
+        return new_dataset
+    
+    def shuffle(self) -> None:
+        """
+        Shuffle the dataset.
+        """
+        np.random.shuffle(self.files)
 
     @classmethod
     def pyvista_to_surface_dgl(

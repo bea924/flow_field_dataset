@@ -128,6 +128,18 @@ class PyvistaFlowFieldDataset:
 
     def __getitem__(self, idx: int):
         return self.samples[idx]
+    
+    def slice(self, start: int, end: int):
+        """
+        Returns a slice of the dataset.
+        """
+        return PyvistaFlowFieldDataset(self.samples[start:end])
+    
+    def shuffle(self):
+        """
+        Shuffles the dataset in place.
+        """
+        np.random.shuffle(self.samples)
 
     @classmethod
     def try_from_directory(
