@@ -3,7 +3,7 @@ name = "flow-field-dataset"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = "==3.11.11"
+requires-python = "~=3.11"
 dependencies = [
     "huggingface-hub>=0.27.1",
     "ipykernel>=6.29.5",

@@ -7,3 +7,4 @@ examples/meshgraphnet/checkpoints_old
 examples/voxel_data/datasets
 datasets/cooldata
 examples/voxel_data/cooldata
+examples/meshgraphnet/datasets
