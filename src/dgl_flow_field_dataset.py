@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 from typing import Callable, List, Optional
 import dgl
 import torch
@@ -11,8 +12,13 @@ from src.pyvista_flow_field_dataset import (
     SurfaceFieldType,
 )
 import numpy as np
+import concurrent.futures
+import shutil
 
-
+def process_sample(args):
+    cache_dir, sample, i = args
+    g = DGLVolumeFlowFieldDataset.pyvista_to_volume_dgl(sample)
+    dgl.save_graphs(os.path.join(cache_dir, f"{i}.dgl"), g)
 class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
     def __init__(
         self, cache_dir: str, pyvista_dataset: PyvistaFlowFieldDataset | None = None
@@ -26,18 +32,31 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         polydata: pv.PolyData
             The directory where the dataset converted to DGLGraphs is stored. Default None.
         """
-        self.cache_dir = os.path.abspath(cache_dir)
-        if not os.path.exists(self.cache_dir):
-            os.makedirs(self.cache_dir)
+        self.cache_dir = Path(os.path.abspath(cache_dir))
+        
+        if not self.cache_dir.exists():
+            self.cache_dir.mkdir(parents=True)
+        existing_files = [f for f in self.cache_dir.iterdir() if f.suffix == ".dgl"]
+        if len(existing_files) == len(pyvista_dataset or []):
+            self.files = existing_files
+            return
         if pyvista_dataset is not None:
             # clear the cache directory
-            for f in os.listdir(self.cache_dir):
-                os.remove(os.path.join(self.cache_dir, f))
-            for i in range(len(pyvista_dataset)):
-                sample = pyvista_dataset[i]
-                g = self.pyvista_to_volume_dgl(sample)
-                dgl.save_graphs(os.path.join(self.cache_dir, f"{i}.dgl"), g)
-        self.files = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
+            shutil.rmtree(self.cache_dir)
+            pyvista_dataset.unload()
+            args = [
+                (self.cache_dir, pyvista_dataset[i], i)
+                for i in range(len(pyvista_dataset))
+            ]
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                list(
+                    tqdm(
+                        executor.map(process_sample, args),
+                        total=len(pyvista_dataset),
+                        desc="Converting Pyvista dataset to DGLGraphs",
+                    )
+                )
+        self.files = [f for f in self.cache_dir.iterdir() if f.suffix == ".dgl"]
 
     def __len__(self):
         return len(self.files)
@@ -70,7 +89,7 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         edges_to = []
 
         # TODO: Speed up this loop
-        for i in tqdm(range(grid.n_cells), desc="Converting Pyvista to DGLGraph"):
+        for i in range(grid.n_cells):
             neighbors = grid.cell_neighbors(i)
             edges_from.extend([i] * len(neighbors))
             edges_to.extend(neighbors)
@@ -100,7 +119,9 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         graph.ndata["TurbulentKineticEnergy"] = torch.tensor(
             grid.cell_data["TurbulentKineticEnergy"], dtype=torch.float32
         )
-        graph.ndata["Volume"] = torch.tensor(grid.cell_data["Volume"], dtype=torch.float32)
+        graph.ndata["Volume"] = torch.tensor(
+            grid.cell_data["Volume"], dtype=torch.float32
+        )
         connectivity_vectors = (
             graph.ndata["Position"][edges_to] - graph.ndata["Position"][edges_from]
         )
@@ -174,7 +195,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         """Dataset of surface flow fields represented as DGLGraphs.
 
         If a PyvistaFlowFieldDataset is provided, it will be converted to DGLGraphs and stored in the cache directory. If not, the dataset will be loaded from the cache directory.
-        
+
         Parameters:
         -----------
         cache_dir: str
@@ -221,6 +242,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         if self.do_normalization:
             g = self.normalize(g)
         return g
+
     def slice(self, start: int, end: int) -> "DGLSurfaceFlowFieldDataset":
         """
         Get a slice of the dataset.
@@ -236,7 +258,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         new_dataset.edge_means = self.edge_means
         new_dataset.edge_stds = self.edge_stds
         return new_dataset
-    
+
     def shuffle(self) -> None:
         """
         Shuffle the dataset.
@@ -313,9 +335,15 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             graph.ndata["Position"][offset:end_offset, :] = centers
             if "WallShearStress_0" in grid.cell_data:
                 shear_stresses = (
-                    torch.tensor(grid.cell_data["WallShearStress_0"], dtype=torch.float32),
-                    torch.tensor(grid.cell_data["WallShearStress_1"], dtype=torch.float32),
-                    torch.tensor(grid.cell_data["WallShearStress_2"], dtype=torch.float32),
+                    torch.tensor(
+                        grid.cell_data["WallShearStress_0"], dtype=torch.float32
+                    ),
+                    torch.tensor(
+                        grid.cell_data["WallShearStress_1"], dtype=torch.float32
+                    ),
+                    torch.tensor(
+                        grid.cell_data["WallShearStress_2"], dtype=torch.float32
+                    ),
                 )
 
                 shear_stress = torch.stack(shear_stresses, dim=1)
@@ -324,7 +352,10 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
                 grid.extract_surface().face_normals, dtype=torch.float32
             )
             graph.ndata["CellArea"][offset:end_offset] = torch.tensor(
-                grid.compute_cell_sizes(length=False,area=True,volume=False).cell_data['Area'], dtype=torch.float32
+                grid.compute_cell_sizes(
+                    length=False, area=True, volume=False
+                ).cell_data["Area"],
+                dtype=torch.float32,
             )
             graph.ndata["BodyID"][offset:end_offset] = block_index
             offset += grid.n_cells
@@ -426,7 +457,8 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             if graph.ndata[key].dtype != torch.float32:
                 continue
             graph.ndata[key] = (
-                graph.ndata[key] - torch.tensor(self.node_means[key], device=graph.device)
+                graph.ndata[key]
+                - torch.tensor(self.node_means[key], device=graph.device)
             ) / torch.tensor(self.node_stds[key], device=graph.device)
         for key in graph.edata.keys():
             if key not in self.edge_means or key not in self.edge_stds:
@@ -434,9 +466,11 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             if graph.edata[key].dtype != torch.float32:
                 continue
             graph.edata[key] = (
-                graph.edata[key] - torch.tensor(self.edge_means[key], device=graph.device)
+                graph.edata[key]
+                - torch.tensor(self.edge_means[key], device=graph.device)
             ) / torch.tensor(self.edge_stds[key], device=graph.device)
-    def normalize(self, graph: dgl.DGLGraph)-> dgl.DGLGraph:
+
+    def normalize(self, graph: dgl.DGLGraph) -> dgl.DGLGraph:
         """
         Normalize the features of the graph.
 
@@ -453,8 +487,7 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         self.normalize_inplace(graph)
         return graph
 
-
-    def denormalize_inplace(self, graph: dgl.DGLGraph)-> None:
+    def denormalize_inplace(self, graph: dgl.DGLGraph) -> None:
         """
         Denormalize the features of the graph in place.
 
@@ -470,7 +503,8 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             if graph.ndata[key].dtype != torch.float32:
                 continue
             graph.ndata[key] = (
-                graph.ndata[key] * torch.tensor(self.node_stds[key], device=graph.device)
+                graph.ndata[key]
+                * torch.tensor(self.node_stds[key], device=graph.device)
             ) + torch.tensor(self.node_means[key], device=graph.device)
         for key in graph.edata.keys():
             if key not in self.edge_means or key not in self.edge_stds:
@@ -478,9 +512,11 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             if graph.edata[key].dtype != torch.float32:
                 continue
             graph.edata[key] = (
-                graph.edata[key] * torch.tensor(self.edge_stds[key], device=graph.device)
+                graph.edata[key]
+                * torch.tensor(self.edge_stds[key], device=graph.device)
             ) + torch.tensor(self.edge_means[key], device=graph.device)
-    def denormalize(self, graph: dgl.DGLGraph)-> dgl.DGLGraph:
+
+    def denormalize(self, graph: dgl.DGLGraph) -> dgl.DGLGraph:
         """
         Denormalize the features of the graph.
 
@@ -518,9 +554,15 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         edges = torch.stack([num_nodes_per_edge, e_from, e_to], dim=1).detach()
         grid = pv.PolyData(graph.ndata["Position"].detach().numpy(), edges.numpy())
         grid.point_data["Pressure"] = graph.ndata["Pressure"].detach().numpy()
-        grid.point_data["WallShearStress_0"] = graph.ndata["ShearStress"][:, 0].detach().numpy()
-        grid.point_data["WallShearStress_1"] = graph.ndata["ShearStress"][:, 1].detach().numpy()
-        grid.point_data["WallShearStress_2"] = graph.ndata["ShearStress"][:, 2].detach().numpy()
+        grid.point_data["WallShearStress_0"] = (
+            graph.ndata["ShearStress"][:, 0].detach().numpy()
+        )
+        grid.point_data["WallShearStress_1"] = (
+            graph.ndata["ShearStress"][:, 1].detach().numpy()
+        )
+        grid.point_data["WallShearStress_2"] = (
+            graph.ndata["ShearStress"][:, 2].detach().numpy()
+        )
         grid.point_data["Temperature"] = graph.ndata["Temperature"].detach().numpy()
         grid.point_data["Normal_0"] = graph.ndata["Normal"][:, 0].detach().numpy()
         grid.point_data["Normal_1"] = graph.ndata["Normal"][:, 1].detach().numpy()
@@ -529,7 +571,12 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         grid.point_data["BodyID"] = graph.ndata["BodyID"].detach().numpy()
         return grid
 
-    def plot_surface(self, graph: dgl.DGLGraph, scalar: SurfaceFieldType, object_id: Optional[int] = None):
+    def plot_surface(
+        self,
+        graph: dgl.DGLGraph,
+        scalar: SurfaceFieldType,
+        object_id: Optional[int] = None,
+    ):
         """
         Plot the surface of the graph.
 
@@ -550,8 +597,10 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             line_width=4,
             style="wireframe",
         )
-    
-    def compute_aggregate_force(self, graph: dgl.DGLGraph, object_id: Optional[int]=None) -> torch.Tensor:
+
+    def compute_aggregate_force(
+        self, graph: dgl.DGLGraph, object_id: Optional[int] = None
+    ) -> torch.Tensor:
         """
         Compute the aggregate force acting on the surface.
 
@@ -570,8 +619,12 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             graph = self.denormalize(graph)
         cell_areas = graph.ndata["CellArea"]
 
-        cell_pressure_forces = graph.ndata["Pressure"][:,None] * cell_areas[:,None] * graph.ndata["Normal"]
-        cell_shear_forces = graph.ndata["ShearStress"] * cell_areas[:,None]
+        cell_pressure_forces = (
+            graph.ndata["Pressure"][:, None]
+            * cell_areas[:, None]
+            * graph.ndata["Normal"]
+        )
+        cell_shear_forces = graph.ndata["ShearStress"] * cell_areas[:, None]
         if object_id is not None:
             mask = graph.ndata["BodyID"] == object_id
             cell_pressure_forces = cell_pressure_forces[mask]
@@ -579,7 +632,6 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         pressure_force = cell_pressure_forces.sum(dim=0)
         shear_force = cell_shear_forces.sum(dim=0)
         return pressure_force + shear_force
-
 
     @classmethod
     def l2_loss(cls, graph1: dgl.DGLGraph, graph2: dgl.DGLGraph):
