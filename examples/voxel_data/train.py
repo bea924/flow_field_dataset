@@ -15,14 +15,16 @@ import torch
 from flow_field_model import create_flow_field_model
 
 if __name__ == "__main__":
-    # ds_pv = PyvistaFlowFieldDataset.load_from_huggingface(num_samples=10, data_dir='datasets/ds_hf')
-    # ds_voxel = VoxelFlowFieldDataset(cache_dir='datasets/voxel_data', config=VoxelFlowFieldDatasetConfig(
+    # ds_pv = PyvistaFlowFieldDataset.load_from_huggingface(num_samples=10, data_dir='datasets/pyvista-medium')
+    # ds_voxel = VoxelFlowFieldDataset(cache_dir='datasets/voxels-medium', config=VoxelFlowFieldDatasetConfig(
     #     pyvista_dataset=ds_pv,
     #     resolution=(32,16,16)
     # ))
-    ds_voxel = VoxelFlowFieldDataset(cache_dir="datasets/voxel_data")
+    ds_voxel = VoxelFlowFieldDataset(cache_dir="datasets/voxels-medium")
     ds_voxel.normalize()
     ds_voxel.shuffle()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
     num_train_samples = int(len(ds_voxel) * 0.8)
     num_val_samples = len(ds_voxel) - num_train_samples
@@ -39,6 +41,7 @@ if __name__ == "__main__":
     model = create_flow_field_model(input_shape=(32, 16, 16), out_channels=5)
     num_params = count_parameters(model)
     print(f"Number of parameters: {num_params}")
+    model = model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     losses = []
@@ -48,8 +51,8 @@ if __name__ == "__main__":
         loss_sum = 0.0
         for batch in train_dataloader:
             mask, Y = batch
-            mask = mask.unsqueeze(1).float()
-            Y = Y.permute(0, 4, 1, 2, 3)
+            mask = mask.unsqueeze(1).float().to(device)
+            Y = Y.permute(0, 4, 1, 2, 3).to(device)
             pred = model(mask.float())
             loss = torch.nn.functional.mse_loss(pred, Y, reduction="mean")
             loss_sum += loss.item()
@@ -62,8 +65,8 @@ if __name__ == "__main__":
             val_loss = 0.0
             for batch in val_dataloader:
                 mask, Y = batch
-                mask = mask.unsqueeze(1).float()
-                Y = Y.permute(0, 4, 1, 2, 3)
+                mask = mask.unsqueeze(1).float().to(device)
+                Y = Y.permute(0, 4, 1, 2, 3).to(device)
                 pred = model(mask)
                 val_loss += torch.nn.functional.mse_loss(
                     pred, Y, reduction="mean"
