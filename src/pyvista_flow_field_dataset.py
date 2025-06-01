@@ -8,6 +8,10 @@ import huggingface_hub as hf  # type: ignore
 import shutil
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from tqdm import tqdm
+import re
+import pandas as pd
+
+from src.metadata import df_row_to_system_parameters, SystemParameters
 
 VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 
@@ -27,11 +31,12 @@ SurfaceFieldType = Literal[
 
 
 class PyvistaSample:
-    def __init__(self, volume_path: str | Path, surface_path: str | Path):
+    def __init__(self, volume_path: str | Path, surface_path: str | Path, metadata: SystemParameters | None = None):
         self.volume_path = Path(volume_path)
         self.surface_path = Path(surface_path)
         self._volume_data: pv.MultiBlock | None = None
         self._surface_data: pv.MultiBlock | None = None
+        self.metadata = metadata
 
     @property
     def surface_data(self):
@@ -118,6 +123,17 @@ class PyvistaSample:
             self.unload()
         return bounds
 
+    @property
+    def design_id(self) -> int:
+        """
+        Returns the design ID of the sample, which is extracted from the file name.
+        The design ID is assumed to be the second last part of the file name, split by underscores.
+        """
+        stem= self.volume_path.stem
+        id= re.search(r"_(\d+)", stem)
+        if id:
+            return int(id.group(1))
+        raise ValueError("Design ID not found")
 
 class PyvistaFlowFieldDataset:
     def __init__(self, samples: list[PyvistaSample]):
@@ -137,6 +153,10 @@ class PyvistaFlowFieldDataset:
         data_dir = Path(data_dir)
         volume_dir = data_dir / "volume"
         surface_dir = data_dir / "surface"
+        metadata_file = data_dir / "metadata.parquet"
+        if not metadata_file.exists():
+            print(f"Metadata file not found at {metadata_file}.")
+            return None
         os.makedirs(volume_dir, exist_ok=True)
         os.makedirs(surface_dir, exist_ok=True)
         volume_files = list(volume_dir.glob("*.cgns"))
@@ -153,7 +173,11 @@ class PyvistaFlowFieldDataset:
         if len(samples) < num_samples:
             return None
         samples = samples[:num_samples]
-        return cls(samples)
+        ds= cls(samples)
+        metadata_df = pd.read_parquet(metadata_file)
+        ds.add_metadata(metadata_df)
+        print(f"Loaded {len(ds)} samples from '{data_dir}'.")
+        return ds
 
     @classmethod
     def load_from_huggingface(
@@ -191,6 +215,12 @@ class PyvistaFlowFieldDataset:
 
         repo_id = "datasets/bgce/cooldata-v2"
         fs = hf.HfFileSystem()
+        # download metadata file
+        metadata_file = f"{repo_id}/metadata.parquet"
+        local_metadata_path = os.path.join(data_dir, "metadata.parquet")
+        fs.download(metadata_file, local_metadata_path)
+        metadata_df = pd.read_parquet(local_metadata_path)
+        
         runs = fs.glob(f"{repo_id}/runs/run_*", detail=False)
         samples: list[PyvistaSample] = []
         runs = sorted(runs, key=lambda x: int(x.split("/")[-1].removeprefix("run_")))
@@ -241,12 +271,34 @@ class PyvistaFlowFieldDataset:
                     samples.append(PyvistaSample(moved_volume_path, moved_surface_path))
                     if len(samples) >= num_samples:
                         shutil.rmtree(tmp_dir)
-                        return cls(samples)
+                        ds= cls(samples)
+                        ds.add_metadata(metadata_df)
+                        print(f"Loaded {len(ds)} samples from '{data_dir}'.")
+                        return ds
         # Clean up temporary directory
         shutil.rmtree(tmp_dir)
 
-        return cls(samples)
+        ds = cls(samples)
+        ds.add_metadata(metadata_df)
+        print(f"Loaded {len(ds)} samples from '{data_dir}'.")
+        return ds
 
+    def add_metadata(self, metadata_df: pd.DataFrame)-> None:
+        """
+        Adds metadata to the samples from a pandas DataFrame.
+        The DataFrame should have a column 'design_id' that matches the design ID of the samples.
+        """
+        if not isinstance(metadata_df, pd.DataFrame):
+            raise TypeError("metadata_df must be a pandas DataFrame.")
+        
+        for sample in self.samples:
+            design_id = sample.design_id
+            try:
+                md = df_row_to_system_parameters(metadata_df, design_id)
+                sample.metadata = md
+            except Exception as e:
+                print(f"Failed to add metadata for sample with design ID {design_id}: {e}")
+    
     def get_bounds(self):
         """
         Returns the bounding box of the volume data.

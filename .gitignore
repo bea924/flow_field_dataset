@@ -9,3 +9,4 @@ datasets/cooldata
 examples/voxel_data/cooldata
 examples/meshgraphnet/datasets
 datasets/
+examples/voxel_data/unet3d.pth
