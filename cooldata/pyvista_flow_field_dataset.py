@@ -17,16 +17,17 @@ VolumeFieldType = Literal["Velocity_0", "Velocity_1", "Velocity_2", "Pressure", 
 
 
 SurfaceFieldType = Literal[
-    "Pressure",
+    "AreaMagnitude",
+    "HeatTransferCoefficient",
+    "Normal_0",
+    "Normal_1",
+    "Normal_2",
     "Temperature",
+    "Pressure",
     "WallShearStressMagnitude",
     "WallShearStress_0",
     "WallShearStress_1",
     "WallShearStress_2",
-    "CellArea",
-    "Normal_0",
-    "Normal_1",
-    "Normal_2",
 ]
 
 
