@@ -22,8 +22,8 @@ import shutil
 
 from cooldata.pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
-VoxelField = Literal["Pressure", "Temperature", "Velocity", "Position"]
-voxel_fields: list[VoxelField] = ["Pressure", "Temperature", "Velocity", "Position"]
+VoxelField = Literal["Pressure", "Temperature", "Velocity", "Position", "TurbulentKineticEnergy", "TurbulentDissipationRate"]
+voxel_fields: list[VoxelField] = ["Pressure", "Temperature", "Velocity", "Position", "TurbulentKineticEnergy", "TurbulentDissipationRate"]
 
 Normalization = dict[VoxelField, Union[tuple[list[float], list[float]],tuple[float,float]]]
 """
@@ -140,7 +140,9 @@ class VoxelFlowFieldSample:
             "Temperature": torch.tensor(interpolated["Temperature"].reshape(resolution,order="F"),dtype=torch.float32),
             "Velocity": torch.stack([torch.tensor(v.reshape(resolution,order="F"),dtype=torch.float32) for v in velocities],dim=-1),
             "Mask": torch.tensor(interpolated["vtkValidPointMask"].reshape(resolution,order="F"),dtype=torch.bool),
-            "Position": torch.tensor(np.stack([x,y,z],axis=-1).reshape(resolution + (3,),order="F"),dtype=torch.float32)
+            "Position": torch.tensor(np.stack([x,y,z],axis=-1).reshape(resolution + (3,),order="F"),dtype=torch.float32),
+            "TurbulentKineticEnergy": torch.tensor(interpolated["TurbulentKineticEnergy"].reshape(resolution,order="F"),dtype=torch.float32),
+            "TurbulentDissipationRate": torch.tensor(interpolated["TurbulentDissipationRate"].reshape(resolution,order="F"),dtype=torch.float32)
         })
         data.save(save_path)
         if not was_loaded:
@@ -187,7 +189,7 @@ class VoxelFlowFieldSample:
         """
         field_values = self.get_field(field, normalized=False)
         field_np = field_values.cpu().numpy()
-        slice = None
+        slice: np.ndarray | None = None
         if axis == "x":
             if slice_idx is None:
                 slice_idx = field_np.shape[0] // 2
@@ -202,6 +204,10 @@ class VoxelFlowFieldSample:
             slice = field_np[:, :, slice_idx]
         else:
             raise ValueError("Axis must be 'x', 'y', or 'z'.")
+        title_addon = ""
+        if slice.ndim == 3:
+            slice = np.sqrt(np.sum(slice**2, axis=-1))  # If it's a vector field, take the magnitude
+            title_addon = " (magnitude)"
         plt.imshow(slice, cmap="viridis")
         plt.colorbar()
         if axis == "x":
@@ -209,20 +215,20 @@ class VoxelFlowFieldSample:
             plt.ylabel("z")
             plt.yticks(ticks=np.arange(0, self.resolution[1], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[2], self.bounding_box[3], num=self.resolution[1])[::5]])
             plt.xticks(ticks=np.arange(0, self.resolution[2], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[4], self.bounding_box[5], num=self.resolution[2])[::5]])
-            plt.title(f"{field} at x = {self.bounding_box[0] + (slice_idx / self.resolution[0]) * (self.bounding_box[1] - self.bounding_box[0]):.2f}")
+            plt.title(f"{field} at x = {self.bounding_box[0] + (slice_idx / self.resolution[0]) * (self.bounding_box[1] - self.bounding_box[0]):.2f}{title_addon}")
         elif axis == "y":
             plt.xlabel("x")
             plt.ylabel("z")
             plt.yticks(ticks=np.arange(0, self.resolution[0], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[0], self.bounding_box[1], num=self.resolution[0])[::5]])
             plt.xticks(ticks=np.arange(0, self.resolution[2], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[4], self.bounding_box[5], num=self.resolution[2])[::5]])
-            plt.title(f"{field} at y = {self.bounding_box[2] + (slice_idx / self.resolution[1]) * (self.bounding_box[3] - self.bounding_box[2]):.2f}")
+            plt.title(f"{field} at y = {self.bounding_box[2] + (slice_idx / self.resolution[1]) * (self.bounding_box[3] - self.bounding_box[2]):.2f}{title_addon}")
         elif axis == "z":
             plt.xlabel("x")
             plt.ylabel("y")
             plt.yticks(ticks=np.arange(0, self.resolution[0], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[0], self.bounding_box[1], num=self.resolution[0])[::5]])
             plt.xticks(ticks=np.arange(0, self.resolution[1], step=5), labels=[f"{val:.2f}" for val in np.linspace(self.bounding_box[2], self.bounding_box[3], num=self.resolution[1])[::5]])
-            plt.title(f"{field} at z = {self.bounding_box[4] + (slice_idx / self.resolution[2]) * (self.bounding_box[5] - self.bounding_box[4]):.2f}")
-        
+            plt.title(f"{field} at z = {self.bounding_box[4] + (slice_idx / self.resolution[2]) * (self.bounding_box[5] - self.bounding_box[4]):.2f}{title_addon}")
+
         # preserve aspect ratio
         plt.gca().set_aspect('equal', adjustable='box')
         plt.grid()

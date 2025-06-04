@@ -13,7 +13,7 @@ import pandas as pd
 
 from cooldata.metadata import df_row_to_system_parameters, SystemParameters
 
-VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
+VolumeFieldType = Literal["Velocity_0", "Velocity_1", "Velocity_2", "Pressure", "Temperature", "TurbulentKineticEnergy", "TurbulentDissipationRate"]
 
 
 SurfaceFieldType = Literal[
