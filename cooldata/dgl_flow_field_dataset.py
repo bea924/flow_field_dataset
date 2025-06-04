@@ -2,7 +2,16 @@ import json
 import os
 from pathlib import Path
 from typing import Callable, List, Optional
-import dgl
+
+try:
+    import dgl
+except ImportError as e:
+    raise ImportError(
+        f"""DGL is not installed. Please install it manually by following the instructions at: 
+        "https://www.dgl.ai/pages/start.html
+        {e}"""
+    )
+
 import torch
 import pyvista as pv
 from tqdm import tqdm
@@ -15,10 +24,13 @@ import numpy as np
 import concurrent.futures
 import shutil
 
+
 def process_sample(args):
     cache_dir, sample, i = args
     g = DGLVolumeFlowFieldDataset.pyvista_to_volume_dgl(sample)
     dgl.save_graphs(os.path.join(cache_dir, f"{i}.dgl"), g)
+
+
 class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
     def __init__(
         self, cache_dir: str, pyvista_dataset: PyvistaFlowFieldDataset | None = None
@@ -33,8 +45,8 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
             The directory where the dataset converted to DGLGraphs is stored. Default None.
         """
         self.cache_dir = Path(os.path.abspath(cache_dir))
-        self.node_stats: tuple[dict,dict] | None = None
-        self.edge_stats: tuple[dict,dict] | None = None
+        self.node_stats: tuple[dict, dict] | None = None
+        self.edge_stats: tuple[dict, dict] | None = None
         if not self.cache_dir.exists():
             self.cache_dir.mkdir(parents=True)
         existing_files = [f for f in self.cache_dir.iterdir() if f.suffix == ".dgl"]
@@ -59,7 +71,6 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
                 )
         self.files = [f for f in self.cache_dir.iterdir() if f.suffix == ".dgl"]
 
-    
     def __len__(self):
         return len(self.files)
 
@@ -146,6 +157,7 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         pv.PolyData: The converted PolyData object.
         """
         raise NotImplementedError("Implement this method")
+
     def normalize(self):
         if os.path.exists(os.path.join(self.cache_dir, "stats.json")):
             with open(os.path.join(self.cache_dir, "stats.json"), "r") as f:
@@ -156,9 +168,7 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         else:
             self.node_stats = self.compute_node_stats()
             self.edge_stats = self.compute_edge_stats()
-            with open(
-                os.path.join(self.cache_dir, "stats.json"), "w"
-            ) as f:
+            with open(os.path.join(self.cache_dir, "stats.json"), "w") as f:
                 json.dump(
                     {
                         "node_stats": self.node_stats,
@@ -166,9 +176,11 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
                     },
                     f,
                 )
+
     def denormalize(self):
         self.node_stats = None
         self.edge_stats = None
+
     def normalize_inplace(self, graph: dgl.DGLGraph):
         """
         Normalize the features of the graph.
@@ -224,7 +236,7 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
                 graph.edata[key]
                 * torch.tensor(self.edge_stds[key], device=graph.device)
             ) + torch.tensor(self.edge_means[key], device=graph.device)
-    
+
     def compute_node_stats(self) -> tuple[dict[str, float], dict[str, float]]:
         """
         Compute the mean and standard deviation of the node features.
