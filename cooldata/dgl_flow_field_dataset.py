@@ -6,7 +6,7 @@ import dgl
 import torch
 import pyvista as pv
 from tqdm import tqdm
-from src.pyvista_flow_field_dataset import (
+from cooldata.pyvista_flow_field_dataset import (
     PyvistaFlowFieldDataset,
     PyvistaSample,
     SurfaceFieldType,

@@ -2,8 +2,8 @@ from pathlib import Path
 import lightning.pytorch as pl
 from lightning.pytorch.utilities.types import TRAIN_DATALOADERS
 
-from src.pyvista_flow_field_dataset import PyvistaFlowFieldDataset
-from src.voxel_flow_field_dataset import VoxelFlowFieldDataset, VoxelFlowFieldDatasetConfig
+from cooldata.pyvista_flow_field_dataset import PyvistaFlowFieldDataset
+from cooldata.voxel_flow_field_dataset import VoxelFlowFieldDataset, VoxelFlowFieldDatasetConfig
 from torch.utils.data import DataLoader as Dataloader
 
 class VoxelDataModule(pl.LightningDataModule):

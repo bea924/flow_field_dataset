@@ -3,14 +3,14 @@ import sys
 
 base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 sys.path.append(base_path)
-from src.voxel_flow_field_dataset import (
+from cooldata.voxel_flow_field_dataset import (
     VoxelFlowFieldDataset,
     VoxelFlowFieldDatasetConfig,
 )
 
 from model import FlowFieldTransformer, count_parameters
 from torch.utils.data import DataLoader
-from src.pyvista_flow_field_dataset import PyvistaFlowFieldDataset
+from cooldata.pyvista_flow_field_dataset import PyvistaFlowFieldDataset
 import torch
 from flow_field_model import create_flow_field_model
 

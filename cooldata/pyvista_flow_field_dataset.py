@@ -11,7 +11,7 @@ from tqdm import tqdm
 import re
 import pandas as pd
 
-from src.metadata import df_row_to_system_parameters, SystemParameters
+from cooldata.metadata import df_row_to_system_parameters, SystemParameters
 
 VolumeFieldType = Literal["Velocity", "Pressure", "Temperature"]
 

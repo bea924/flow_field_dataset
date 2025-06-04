@@ -1,4 +1,3 @@
-# filepath: /Users/ole/Documents/software/flow_field_dataset/src/metadata.py
 from typing import List, NamedTuple
 import pandas as pd
 

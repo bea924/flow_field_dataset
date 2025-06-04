@@ -19,7 +19,11 @@ This Python dataset library is designed to streamline the end-to-end model train
 
 ## Installation
 
-Currently you need to clone the repository and add it to your Python path. We are working on making it available through `pip`.
+Run
+
+```bash
+pip install cooldata
+```
 
 ## Example Usage
 

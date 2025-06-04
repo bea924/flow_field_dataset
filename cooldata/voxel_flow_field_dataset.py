@@ -20,7 +20,7 @@ from ipywidgets import interact, fixed
 from tqdm import tqdm
 import shutil
 
-from src.pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
+from cooldata.pyvista_flow_field_dataset import PyvistaFlowFieldDataset, PyvistaSample
 
 VoxelField = Literal["Pressure", "Temperature", "Velocity", "Position"]
 voxel_fields: list[VoxelField] = ["Pressure", "Temperature", "Velocity", "Position"]
