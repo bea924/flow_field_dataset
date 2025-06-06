@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-CoolData> Dataset Library for 3D Machine Learning documentation
+CoolData: Dataset Library for 3D Machine Learning documentation
 =====================================================
 
 
