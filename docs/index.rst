@@ -3,14 +3,17 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-CoolData
-========
-
-Dataset Library for 3D Machine Learning documentation
+CoolData> Dataset Library for 3D Machine Learning documentation
 =====================================================
 
 
 This Python dataset library is designed to streamline the end-to-end model training process, enabling efficient loading, visualization, and preparation of 3D data for machine learning applications. It supports advanced techniques, including graph neural networks and voxelized methods, with seamless integration into PyTorch workflows.
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Contents:
+
+   usage/autodoc
 
 Features
 ---------
@@ -32,17 +35,6 @@ Features
 
 
 Installation
--------------
-.. code-block::
-   pip install cooldata
+--------------
+``pip install cooldata``
 If you want to use the DGL support, you also need to install the `DGL library <https://www.dgl.ai/>`_, as documented `here <https://www.dgl.ai/pages/start.html>`_.
-
-
-.. toctree::
-   :maxdepth: 2
-   usage/installation
-
-
-
-
-

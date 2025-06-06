@@ -38,5 +38,8 @@ sys.path.insert(0, os.path.abspath('../cooldata//home/pyvista_flow_field_dataset
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
-    'sphinx.ext.viewcode'
+    'sphinx.ext.viewcode',
+    sphinx_autodoc_typehints'
 ]
+
+autodoc_typehints = "description"
