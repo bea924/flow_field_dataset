@@ -1,10 +1,10 @@
-flow_field_dataset autodoc
+cooldata autodoc
 ----------------
 
 Metadata Module
 ===============
 
-.. automodule:: flow_field_dataset
+.. automodule:: cooldata
    :members:
    :undoc-members:
    :show-inheritance:
@@ -12,17 +12,17 @@ Metadata Module
 Classes
 -------
 
-.. autoclass:: flow_field_dataset.FlowGeometry
+.. autoclass:: cooldata.FlowGeometry
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: flow_field_dataset.FlowField
+.. autoclass:: cooldata.FlowField
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: flow_field_dataset.FlowFieldDataset
+.. autoclass:: cooldata.FlowFieldDataset
    :members:
    :undoc-members:
    :show-inheritance:
@@ -30,4 +30,4 @@ Classes
 Functions
 ---------
 
-.. autofunction:: flow_field_dataset.FlowGeometry.__init__
+.. autofunction:: cooldata.FlowGeometry.__init__

@@ -3,7 +3,7 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-CoolData: Dataset Library for 3D Machine Learning documentation
+CoolData: Dataset Library for 3D Machine Learning
 =====================================================
 
 
@@ -13,13 +13,14 @@ This Python dataset library is designed to streamline the end-to-end model train
    :maxdepth: 2
    :caption: Contents:
 
+   usage.example_metadata
    usage/autodoc
 
 Features
 ---------
-- Data Storage: Organized in folders containing .cgns files for compatibility with computational fluid dynamics tools.
-- PyVista Integration: Access to dataset samples as PyVista objects for easy 3D visualization and manipulation.
-- Graph Neural Network Support:
+- **Data Storage:** Organized in folders containing .cgns files for compatibility with computational fluid dynamics tools.
+- **PyVista Integration:** Access to dataset samples as PyVista objects for easy 3D visualization and manipulation.
+- **Graph Neural Network Support:**
 
    - DGL Support:
 
@@ -29,7 +30,7 @@ Features
 
    - PyG Support: Implementing functionalities similar to DGL (Planned).
 
-- Hugging Face Integration: Direct dataset loading from `Hugging Face <https://huggingface.co/>`_.
+- **Hugging Face Integration:** Direct dataset loading from `Hugging Face <https://huggingface.co/>`_.
 - Voxelized Flow Field Support: Facilitates image processing-based ML approaches (Planned).
 - Comprehensive Metadata Accessibility: For advanced model comparison and evaluation (Planned).
 
@@ -37,4 +38,5 @@ Features
 Installation
 --------------
 ``pip install cooldata``
+
 If you want to use the DGL support, you also need to install the `DGL library <https://www.dgl.ai/>`_, as documented `here <https://www.dgl.ai/pages/start.html>`_.

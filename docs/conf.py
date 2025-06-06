@@ -39,7 +39,7 @@ html_theme_options = {
 
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../cooldata//home/pyvista_flow_field_dataset.py'))
+sys.path.insert(0, os.path.abspath('../cooldata'))
 
 extensions = [
     'sphinx.ext.autodoc',
@@ -48,3 +48,13 @@ extensions = [
 ]
 
 autodoc_typehints = "description"
+
+
+# Side bar
+html_sidebars = {
+    '**': [
+        'logo-text.html', 
+        'globaltoc.html',
+        'searchbox.html',
+    ]
+}
