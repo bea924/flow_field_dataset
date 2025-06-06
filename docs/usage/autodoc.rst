@@ -4,7 +4,7 @@ cooldata autodoc
 Metadata Module
 ===============
 
-.. automodule:: cooldata
+.. automodule:: cooldata.flow_field_dataset
    :members:
    :undoc-members:
    :show-inheritance:
@@ -12,17 +12,17 @@ Metadata Module
 Classes
 -------
 
-.. autoclass:: cooldata.FlowGeometry
+.. autoclass:: cooldata.flow_field_dataset.FlowGeometry
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: cooldata.FlowField
+.. autoclass:: cooldata.flow_field_dataset.FlowField
    :members:
    :undoc-members:
    :show-inheritance:
 
-.. autoclass:: cooldata.FlowFieldDataset
+.. autoclass:: cooldata.flow_field_dataset.FlowFieldDataset
    :members:
    :undoc-members:
    :show-inheritance:
@@ -30,4 +30,4 @@ Classes
 Functions
 ---------
 
-.. autofunction:: cooldata.FlowGeometry.__init__
+.. autofunction:: cooldata.flow_field_dataset.FlowGeometry.__init__
