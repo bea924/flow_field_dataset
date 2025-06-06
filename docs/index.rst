@@ -13,7 +13,7 @@ This Python dataset library is designed to streamline the end-to-end model train
    :maxdepth: 2
    :caption: Contents:
 
-   usage.example_metadata
+   usage/example_metadata
    usage/autodoc
 
 Features
