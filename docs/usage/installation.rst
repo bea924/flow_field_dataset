@@ -1,8 +1,8 @@
 Installation
 ----------------
 
-Run
 
-.. code-block:: bash
-   pip install cooldata
-If you want to use the DGL support, you also need to install the `DGL library <https://www.dgl.ai/>`_, as documented `here <https://www.dgl.ai/pages/start.html>`_.
+.. automodule:: myproject.datasets.pyvista_flow_field_dataset
+   :members:
+   :undoc-members:
+   :show-inheritance:

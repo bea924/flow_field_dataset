@@ -27,8 +27,16 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 html_theme = 'classic'
 html_static_path = ['_static']
 
+
+
+# Automatic code documentation
+
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../cooldata//home/pyvista_flow_field_dataset.py'))
+
 extensions = [
-    'sphinx.ext.duration',
-    'sphinx.ext.doctest',
-    'sphinx.ext.autodoc'
+    'sphinx.ext.autodoc',
+    'sphinx.ext.napoleon',
+    'sphinx.ext.viewcode'
 ]
