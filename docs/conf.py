@@ -27,6 +27,12 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 html_theme = 'classic'
 html_static_path = ['_static']
 
+html_logo = "logo.png"
+html_theme_options = {
+    'logo_only': True,
+    'display_version': False,
+}
+
 
 
 # Automatic code documentation
@@ -39,7 +45,6 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
     'sphinx.ext.viewcode',
-    'sphinx_autodoc_typehints'
 ]
 
 autodoc_typehints = "description"
