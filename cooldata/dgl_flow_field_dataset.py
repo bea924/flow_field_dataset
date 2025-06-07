@@ -341,10 +341,11 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         polydata: pv.PolyData
             The directory where the dataset converted to DGLGraphs is stored. Default None.
         """
-        self.cache_dir = os.path.abspath(cache_dir)
-        if not os.path.exists(self.cache_dir):
+        self.cache_dir = Path(os.path.abspath(cache_dir))
+        if not self.cache_dir.exists():
             os.makedirs(self.cache_dir)
-        if pyvista_dataset is not None:
+        existing = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
+        if pyvista_dataset is not None and len(existing) != len(pyvista_dataset):
             # clear the cache directory
             for f in os.listdir(self.cache_dir):
                 os.remove(os.path.join(self.cache_dir, f))
