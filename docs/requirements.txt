@@ -134,3 +134,6 @@ websocket-client==1.8.0 ; python_version >= "3.11" and python_version < "4.0"
 widgetsnbextension==4.0.13 ; python_version >= "3.11" and python_version < "4.0"
 wslink==2.2.2 ; python_version >= "3.11" and python_version < "4.0"
 yarl==1.18.3 ; python_version >= "3.11" and python_version < "4.0"
+sphinx>=7.0
+sphinx-autodoc-typehints
+sphinx-rtd-theme
