@@ -7,7 +7,11 @@ CoolData: Dataset Library for 3D Machine Learning
 =====================================================
 
 
-This Python dataset library is designed to streamline the end-to-end model training process, enabling efficient loading, visualization, and preparation of 3D data for machine learning applications. It supports advanced techniques, including graph neural networks and voxelized methods, with seamless integration into PyTorch workflows.
+This Python dataset library is designed to **streamline the end-to-end model training process**, enabling efficient 
+- loading,
+- visualization, 
+- preparation of 3D data for machine learning applications. 
+It supports advanced techniques, including graph neural networks and voxelized methods, with seamless integration into PyTorch workflows.
 
 .. toctree::
    :maxdepth: 2
@@ -28,11 +32,11 @@ Features
       - 3D visualization of samples and predictions.
       - L2 loss computation and aggregate force evaluation for model training.
 
-   - PyG Support: Implementing functionalities similar to DGL (Planned).
+   - PyG Support: Implementing functionalities similar to DGL *(Planned)*.
 
 - **Hugging Face Integration:** Direct dataset loading from `Hugging Face <https://huggingface.co/>`_.
-- Voxelized Flow Field Support: Facilitates image processing-based ML approaches (Planned).
-- Comprehensive Metadata Accessibility: For advanced model comparison and evaluation (Planned).
+- Voxelized Flow Field Support: Facilitates image processing-based ML approaches *(Planned)*.
+- Comprehensive Metadata Accessibility: For advanced model comparison and evaluation *(Planned)*.
 
 
 Installation
