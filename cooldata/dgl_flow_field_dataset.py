@@ -316,6 +316,12 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         raise NotImplementedError("Implement this method")
 
 
+def process_surface_sample(args):
+    cache_dir, sample, i, patches_to_include = args
+    g = DGLSurfaceFlowFieldDataset.pyvista_to_surface_dgl(sample, patches_to_include)
+    dgl.save_graphs(os.path.join(cache_dir, f"{i}.dgl"), g)
+
+
 class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -342,10 +348,18 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
             # clear the cache directory
             for f in os.listdir(self.cache_dir):
                 os.remove(os.path.join(self.cache_dir, f))
-            for i in tqdm(range(len(pyvista_dataset))):
-                sample = pyvista_dataset[i]
-                g = self.pyvista_to_surface_dgl(sample, patches_to_include)
-                dgl.save_graphs(os.path.join(self.cache_dir, f"{i}.dgl"), g)
+            args = [
+                (self.cache_dir, pyvista_dataset[i], i, patches_to_include)
+                for i in range(len(pyvista_dataset))
+            ]
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                list(
+                    tqdm(
+                        executor.map(process_surface_sample, args),
+                        total=len(pyvista_dataset),
+                        desc="Converting Pyvista dataset to DGLGraphs (surface)",
+                    )
+                )
         self.files = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
 
         # first do not normalize to compute the stats, then normalize
