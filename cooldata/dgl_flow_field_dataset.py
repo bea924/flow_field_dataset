@@ -316,6 +316,12 @@ class DGLVolumeFlowFieldDataset(torch.utils.data.Dataset):
         raise NotImplementedError("Implement this method")
 
 
+def process_surface_sample(args):
+    cache_dir, sample, i, patches_to_include = args
+    g = DGLSurfaceFlowFieldDataset.pyvista_to_surface_dgl(sample, patches_to_include)
+    dgl.save_graphs(os.path.join(cache_dir, f"{i}.dgl"), g)
+
+
 class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
     def __init__(
         self,
@@ -335,17 +341,26 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         polydata: pv.PolyData
             The directory where the dataset converted to DGLGraphs is stored. Default None.
         """
-        self.cache_dir = os.path.abspath(cache_dir)
-        if not os.path.exists(self.cache_dir):
+        self.cache_dir = Path(os.path.abspath(cache_dir))
+        if not self.cache_dir.exists():
             os.makedirs(self.cache_dir)
-        if pyvista_dataset is not None:
+        existing = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
+        if pyvista_dataset is not None and len(existing) != len(pyvista_dataset):
             # clear the cache directory
             for f in os.listdir(self.cache_dir):
                 os.remove(os.path.join(self.cache_dir, f))
-            for i in tqdm(range(len(pyvista_dataset))):
-                sample = pyvista_dataset[i]
-                g = self.pyvista_to_surface_dgl(sample, patches_to_include)
-                dgl.save_graphs(os.path.join(self.cache_dir, f"{i}.dgl"), g)
+            args = [
+                (self.cache_dir, pyvista_dataset[i], i, patches_to_include)
+                for i in range(len(pyvista_dataset))
+            ]
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                list(
+                    tqdm(
+                        executor.map(process_surface_sample, args),
+                        total=len(pyvista_dataset),
+                        desc="Converting Pyvista dataset to DGLGraphs (surface)",
+                    )
+                )
         self.files = [f for f in os.listdir(self.cache_dir) if f.endswith(".dgl")]
 
         # first do not normalize to compute the stats, then normalize
@@ -396,6 +411,22 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         Shuffle the dataset.
         """
         np.random.shuffle(self.files)
+        
+    def select_subset(self, indices: List[int]) -> "DGLSurfaceFlowFieldDataset":
+        """
+        Select a subset of the dataset based on the given indices.
+        """
+        new_dataset = DGLSurfaceFlowFieldDataset(
+            cache_dir=self.cache_dir,
+            pyvista_dataset=None,
+            normalize=self.do_normalization,
+        )
+        new_dataset.files = [self.files[i] for i in indices]
+        new_dataset.node_means = self.node_means
+        new_dataset.node_stds = self.node_stds
+        new_dataset.edge_means = self.edge_means
+        new_dataset.edge_stds = self.edge_stds
+        return new_dataset
 
     @classmethod
     def pyvista_to_surface_dgl(
@@ -416,81 +447,77 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         if block_indices is None:
             block_indices = list(range(len(sample.surface_data[0])))
 
-        offset = 0
-        num_cells = 0
-        total_cells = sum(
-            sample.surface_data[0][block_index].n_cells for block_index in block_indices
-        )
-        max_num_edges = total_cells * 10
-        edges_from = torch.empty((max_num_edges,), dtype=torch.int32)
-        edges_to = torch.empty((max_num_edges,), dtype=torch.int32)
-        edge_counter = 0
         for block_index in block_indices:
-            grid = sample.surface_data[0][block_index]
+            grid= sample.surface_data[0][block_index]
             # TODO: Speed up this loop
-            num_cells += grid.n_cells
-            for i in range(grid.n_cells):
-                neighbors = grid.cell_neighbors(i, "edges")
-                neighbors = [n + offset for n in neighbors]
-                if edge_counter + len(neighbors) > max_num_edges:
-                    print("Resizing")
-                    max_num_edges *= 2
-                    edges_from.resize_(max_num_edges)
-                    edges_to.resize_(max_num_edges)
-                edges_from[edge_counter : edge_counter + len(neighbors)] = i + offset
-                edges_to[edge_counter : edge_counter + len(neighbors)] = torch.tensor(
-                    neighbors, dtype=edges_to.dtype
-                )
-                edge_counter += len(neighbors)
-            offset += grid.n_cells
-        edges_from = edges_from[:edge_counter]
-        edges_to = edges_to[:edge_counter]
-        graph = dgl.graph((edges_from, edges_to), num_nodes=num_cells)
-        graph.ndata["Pressure"] = torch.zeros((num_cells,), dtype=torch.float32)
-        graph.ndata["Temperature"] = torch.zeros((num_cells,), dtype=torch.float32)
-        graph.ndata["Position"] = torch.zeros((num_cells, 3), dtype=torch.float32)
-        graph.ndata["ShearStress"] = torch.zeros((num_cells, 3), dtype=torch.float32)
-        graph.ndata["Normal"] = torch.zeros((num_cells, 3), dtype=torch.float32)
-        graph.ndata["CellArea"] = torch.zeros((num_cells,), dtype=torch.float32)
-        graph.ndata["BodyID"] = torch.zeros((num_cells,), dtype=torch.int32)
-        offset = 0
-        for block_index in block_indices:
-            grid = sample.surface_data[0][block_index]
-            end_offset = offset + grid.n_cells
-            graph.ndata["Pressure"][offset:end_offset] = torch.tensor(
-                grid.cell_data["Pressure"], dtype=torch.float32
-            )
-            graph.ndata["Temperature"][offset:end_offset] = torch.tensor(
-                grid.cell_data["Temperature"], dtype=torch.float32
-            )
-            centers = torch.tensor(grid.cell_centers().points, dtype=torch.float32)
-            graph.ndata["Position"][offset:end_offset, :] = centers
-            if "WallShearStress_0" in grid.cell_data:
-                shear_stresses = (
-                    torch.tensor(
-                        grid.cell_data["WallShearStress_0"], dtype=torch.float32
-                    ),
-                    torch.tensor(
-                        grid.cell_data["WallShearStress_1"], dtype=torch.float32
-                    ),
-                    torch.tensor(
-                        grid.cell_data["WallShearStress_2"], dtype=torch.float32
-                    ),
-                )
+            grid.cell_data["BodyID"] = block_index
+            block_name = sample.surface_data[0].get_block_name(block_index)
+            surface_type = -1
+            if 'wall' in block_name.lower():
+                surface_type = 0
+            elif 'inlet' in block_name.lower():
+                surface_type = 1
+            elif 'outlet' in block_name.lower():
+                surface_type = 2
+            elif 'symmetry' in block_name.lower():
+                surface_type = 3
+            elif 'body' in block_name.lower():
+                surface_type = 4
+            else:
+                print(f"Unknown surface type for block {block_index}: {block_name}")
+            grid.cell_data["SurfaceType"] = surface_type
+            if 'WallShearStress_0' not in grid.cell_data:
+                grid.cell_data["WallShearStress_0"] = 0.0
+                grid.cell_data["WallShearStress_1"] = 0.0
+                grid.cell_data["WallShearStress_2"] = 0.0
+        combined = sample.surface_data[0].combine(merge_points=True)
+        edges_from = []
+        edges_to = []
+        for i in range(combined.n_cells):
+            neighbors = combined.cell_neighbors(i)
+            edges_from.extend([i] * len(neighbors))
+            edges_to.extend(neighbors)
+        graph = dgl.graph((edges_from, edges_to), num_nodes=combined.n_cells)
+        graph.ndata["Pressure"]= torch.tensor(
+            combined.cell_data["Pressure"], dtype=torch.float32
+        )
+        graph.ndata["Temperature"] = torch.tensor(
+            combined.cell_data["Temperature"], dtype=torch.float32
+        )
+        centers = torch.tensor(combined.cell_centers().points, dtype=torch.float32)
+        graph.ndata["Position"] = centers
+        shear_stresses = (
+            torch.tensor(
+                combined.cell_data["WallShearStress_0"], dtype=torch.float32
+            ),
+            torch.tensor(
+                combined.cell_data["WallShearStress_1"], dtype=torch.float32
+            ),
+            torch.tensor(
+                combined.cell_data["WallShearStress_2"], dtype=torch.float32
+            ),
+        )
 
-                shear_stress = torch.stack(shear_stresses, dim=1)
-                graph.ndata["ShearStress"][offset:end_offset] = shear_stress
-            graph.ndata["Normal"][offset:end_offset] = torch.tensor(
-                grid.extract_surface().face_normals, dtype=torch.float32
-            )
-            graph.ndata["CellArea"][offset:end_offset] = torch.tensor(
-                grid.compute_cell_sizes(
-                    length=False, area=True, volume=False
-                ).cell_data["Area"],
-                dtype=torch.float32,
-            )
-            graph.ndata["BodyID"][offset:end_offset] = block_index
-            offset += grid.n_cells
+        shear_stress = torch.stack(shear_stresses, dim=1)
+        graph.ndata["ShearStress"]= shear_stress
+        graph.ndata["Normal"] = torch.tensor(
+            combined.extract_surface().face_normals, dtype=torch.float32
+        )
+        graph.ndata["CellArea"] = torch.tensor(
+            combined.compute_cell_sizes(
+                length=False, area=True, volume=False
+            ).cell_data["Area"],
+            dtype=torch.float32,
+        )
+        graph.ndata["SurfaceType"] = torch.tensor(
+            combined.cell_data["SurfaceType"], dtype=torch.int32
+        )
+        graph.ndata["BodyID"] = torch.tensor(
+            combined.cell_data["BodyID"], dtype=torch.int32
+        )
+        graph.ndata["HeatTransferCoefficient"] = torch.tensor(
+            combined.cell_data["HeatTransferCoefficient"], dtype=torch.float32
+        )
         connectivity_vectors = (
             graph.ndata["Position"][edges_to] - graph.ndata["Position"][edges_from]
         )
