@@ -515,6 +515,9 @@ class DGLSurfaceFlowFieldDataset(torch.utils.data.Dataset):
         graph.ndata["BodyID"] = torch.tensor(
             combined.cell_data["BodyID"], dtype=torch.int32
         )
+        graph.ndata["HeatTransferCoefficient"] = torch.tensor(
+            combined.cell_data["HeatTransferCoefficient"], dtype=torch.float32
+        )
         connectivity_vectors = (
             graph.ndata["Position"][edges_to] - graph.ndata["Position"][edges_from]
         )

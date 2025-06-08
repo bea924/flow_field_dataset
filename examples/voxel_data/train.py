@@ -78,4 +78,4 @@ if __name__ == "__main__":
             val_losses.append(val_loss)
         print(f"Epoch {epoch}, Loss: {losses[-1]}, Val Loss: {val_loss}")
     df = pd.DataFrame({"train_loss": losses, "validation_loss": val_losses, "epoch": list(range(len(losses)))})
-    df.to_csv("losses.csv", index=False)
+    df.to_csv("figures/losses.csv", index=False)
